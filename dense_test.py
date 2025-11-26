@@ -93,17 +93,14 @@ def main():
 
     inp_mat = inp.reshape(INPUT_ROWS, INPUT_COLS)
     inp_tiled = tile_matrix(inp_mat, 4, 8)  # flattened tiled input
-    inp_tiled = inp_tiled.astype(np.int8)
 
-    inp_tensor = iron.zeros(inp_tiled.shape, dtype=np.int8, device="npu")
+    # Convert/set Iron tensors for kernel input and output
+    inp_tensor = iron.tensor(inp_tiled, dtype=np.int8, device="npu")
     output = iron.zeros(OUTPUT_SIZE, dtype=element_type, device="npu")
 
-    inp_tensor[:] = inp_tiled
-
-
+    # Insantiate AIE Kernel
     dense_ly(inp_tensor, output)
 
-    
     out_np = np.array(output, dtype=np.int8)
 
     errors = 0
