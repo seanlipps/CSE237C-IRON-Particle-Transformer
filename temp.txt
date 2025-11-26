@@ -1,0 +1,5 @@
+Input Check: Max=127, Sum=-1869
+
+
+PASS!
+
