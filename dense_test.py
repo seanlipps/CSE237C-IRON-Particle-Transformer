@@ -43,8 +43,8 @@ def dense_ly(input0, output):
     # SAXPY operation on X and Y, and writes the result in Z.
 
     dense_ly_kernel = ExternalFunction(
-        "dense_ly",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/dense_ly.cc"),
+        "f0",
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/dense_layer_ex.cc"),
         arg_types=[in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
@@ -84,8 +84,8 @@ def dense_ly(input0, output):
 def main():
     element_type = np.int8
     
-    inp = np.loadtxt("input.txt", dtype=np.int8)
-    ref = np.loadtxt("out_ref.txt", dtype=np.int8).flatten()
+    inp = np.loadtxt("./iron_kernels/test_data/dense_input.txt", dtype=np.int8)
+    ref = np.loadtxt("./iron_kernels/test_data/dense_out_ref.txt", dtype=np.int8).flatten()
 
     INPUT_ROWS = 160
     INPUT_COLS = 8

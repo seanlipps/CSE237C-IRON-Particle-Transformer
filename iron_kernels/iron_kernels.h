@@ -4,7 +4,7 @@
 #include <aie_api/aie.hpp>
 
 template <int m, int k, int n, int Tm, int Tk, int Tn, int SHIFT, bool is_relu>
-void dense_kernel(
+void dense(
 int8_t * __restrict pA,
 int8_t * __restrict pC,
 const int8_t * matB

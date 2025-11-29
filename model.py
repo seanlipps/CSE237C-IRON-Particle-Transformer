@@ -191,11 +191,11 @@ class AIEModel:
 
     def _generate_kernels(self):
         """Generate C++ kernel files (layer_X.cc) for all layers."""
-        for path in glob.glob("aie/layer_*.cc"):
+        for path in glob.glob("iron_kernels/layer_*.cc"):
             os.remove(path)
 
         for layer in self.layers:
-            with open(f"aie/layer_{layer.idx}.cc", "w") as f:
+            with open(f"iron_kernels/layer_{layer.idx}.cc", "w") as f:
                 layer.generate_kernel_code(f)
 
         print(f"  ✓ Generated {len(self.layers)} kernel files")
