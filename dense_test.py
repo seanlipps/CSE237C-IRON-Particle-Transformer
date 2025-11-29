@@ -46,7 +46,10 @@ def dense_ly(input0, output):
         "dense_ly",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/dense_ly.cc"),
         arg_types=[in_ty, out_ty],
-        include_dirs=[cxx_header_path()],
+        include_dirs=[
+            cxx_header_path(),
+            os.path.join(os.path.dirname(__file__), "iron_kernels")
+        ],
     )
 
     def core_body(of_x, of_z, dense_ly_kernel):
