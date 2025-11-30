@@ -81,17 +81,20 @@ class DenseLayer(AIELayer):
         t_k = in_features // self.k
         t_n = out_features // self.n
 
+        f.write('#include "iron_kernels.h"\n\n')
+
+        f.write('extern "C" {\n')
         f.write('#include <cstdint>\n')
-        f.write(f'__attribute__((section(".data"))) alignas(32) int8_t k_p [{weight_tiled.size}] = {{ ')
+        f.write(f'int8_t k_p [{weight_tiled.size}] = {{ ')
         f.write(', '.join(str(int(x)) for x in weight_tiled))
         f.write(' };\n\n')
 
-        f.write('#include "kernels.h"\n\n')
-
         relu_str = 'true' if self.relu else 'false'
-        f.write(f'void f{self.idx}(input_stream_int8 * __restrict x, output_stream_int8 * __restrict a){{ ')
-        f.write(f'dense<{self.m}, {self.k}, {self.n}, {t_m}, {t_k}, {t_n}, {self.shift}, {relu_str}>')
-        f.write(' (x, a, k_p);}\n')
+        f.write(f'void f{self.idx}(int8_t * x, int8_t *  a){{ \n')
+        f.write(f'    dense<{self.m}, {self.k}, {self.n}, {t_m}, {t_k}, {t_n}, {self.shift}, {relu_str}>')
+        f.write('(x, a, k_p);\n')
+        f.write('}\n')
+        f.write('}')
 
         self._generate_include_code()
 

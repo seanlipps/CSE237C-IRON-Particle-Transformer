@@ -10,23 +10,11 @@ public:
   output_plio AIE_OUT;
 
   kernel dense_0 [1];
-  kernel mha_1 [23];
-  kernel resadd_1 [1];
-  kernel ff1a [1];
-  kernel ff1b [1];
-  kernel resadd_2 [1];
-  kernel mha_2 [23];
-  kernel resadd_3 [1];
-  kernel ff2a [1];
-  kernel ff2b [1];
-  kernel resadd_4 [1];
-  kernel out1 [1];
-  kernel out2 [1];
 
   simpleGraph(){
 
     AIE_IN = input_plio::create("DataIn", plio_128_bits, "data/input.txt", 1280);
-    AIE_OUT = output_plio::create("DataOut", plio_128_bits, "data/out_sim.txt", 1280);
+    AIE_OUT = output_plio::create("DataOut", plio_128_bits, "data/out_sim.txt", 10240);
 
     #include "layer_graph.h"
 
