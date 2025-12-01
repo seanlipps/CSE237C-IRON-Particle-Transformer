@@ -44,26 +44,29 @@ const int8_t * matB
     }
 }
 
+
 // (Q @ K^T):  (T, d_model) @ (T, d_model)^T -> (T, T)
 // m=4, k=8, n=8, T=160, d_model=64, Tm(rows)=160/m=40, Tn(columns)=64/n=8
-
-/*
 template <int m, int k, int n, int Tm, int Tk, int Tn, int d_model, int T, int SHIFT_S>
 void scores(
-  input_stream_int8 * __restrict sQ, // adf::input_buffer<int8, adf::extents<T*d_model>> & sQ,
-  input_stream_int8 * __restrict sK, // adf::input_buffer<int8, adf::extents<T*d_model>> & sK,
-  output_stream_int8 * __restrict sS
+  int8_t * __restrict pQ, // adf::input_buffer<int8, adf::extents<T*d_model>> & sQ,
+  int8_t * __restrict pK, // adf::input_buffer<int8, adf::extents<T*d_model>> & sK,
+  int8_t * __restrict pS
 ) {
   using MMUL = aie::mmul<m, n, m, int8, int8>; // 4x8x4
   using VA   = aie::vector<int8, MMUL::size_A>; // 4x8
   using VB   = aie::vector<int8, MMUL::size_A>; // 8x4
   using VC   = aie::vector<int8, MMUL::size_C>; // 4x4
 
-  VB matB[Tm*Tn]; //store all of matB in mem
+  const int8_t* ptrQ = pQ;
+  const int8_t* ptrK = pK;
+  int8_t* ptrS = pS;
+  VB matB[Tm*Tn]; //store all of pK in mem
 
   for (unsigned i = 0; i < Tm; ++i) { // rows
     for (unsigned j = 0; j < Tn; ++j) { // columns
-      matB[i*Tn+j] = aie::transpose(readincr_v<MMUL::size_A>(sK), m, n);
+      matB[i*Tn+j] = aie::transpose(aie::load_v<MMUL::size_A>(ptrK), m, n);
+      ptrK += MMUL::size_A;
     }
   }
   
@@ -71,7 +74,8 @@ void scores(
   for (unsigned im = 0; im < Tm; ++im) {   // rows of Q
     VA Abuf[Tn]; // row of tiles
     for (unsigned in = 0; in < Tn; ++in) { // columns of Q
-      Abuf[in] = readincr_v<MMUL::size_A>(sQ);
+      Abuf[in] = aie::load_v<MMUL::size_A>(ptrQ);
+      ptrQ += MMUL::size_A;
     }
     for (unsigned jm = 0; jm < Tm; ++jm) { // rows of K
       MMUL C;
@@ -80,19 +84,21 @@ void scores(
         else         C.mac(Abuf[in], matB[jm*Tn+in]);
       }
       VC V = C.template to_vector<int8>(SHIFT_S);
-      writeincr(sS, V);
+      aie::store_v(ptrS, v);
+      ptrS += MMUL::size_C;
     }
   }
 }
+
 
 // (scores @ V)  (T,T) @ (T,d_model) -> (T,d_model)
 // Tm = 160/4 = 40, Tk = 160/4 = 40, Tn = 64/8 = 8
 // 160 x 160 x 64 tiled with 4 x 4 x 8
 template <int m, int k, int n, int Tm, int Tk, int Tn, int SHIFT>
 void context(
-  input_stream_int8 * __restrict sS,
-  input_stream_int8 * __restrict sV,
-  output_stream_int8 * __restrict sC
+  int8_t * __restrict pS,
+  int8_t * __restrict pV,
+  int8_t * __restrict pC
 ) {
   using MMUL = aie::mmul<m, m, n, int8, int16>; // 4x4x8 -> 4x8
   using VA   = aie::vector<int8,  MMUL::size_A>; // 4x4 (int8)
@@ -102,11 +108,15 @@ void context(
   using VBin = aie::vector<int8, MMUL::size_B>; // 4x8 (int8)
   using VCout = aie::vector<int8, MMUL::size_C>; // 4x8 (int8)
 
+  const int8_t* ptrS = pS;
+  const int8_t* ptrV = pV;
+  int8_t* ptrC = pC;
   VB matB[Tm*Tn];
 
   for (unsigned im = 0; im < Tm; ++im) { // rows
     for (unsigned in = 0; in < Tn; ++in) { // columns
-      VBin B = readincr_v<32>(sV); // 4x8
+      VBin B = aie::load_v<MMUL::size_B>(ptrV); // 4x8
+      ptrV += MMUL::size_B;
       VB B16 = B.unpack();
       matB[im*Tn+in] = B16; //convert to int16 for 4x4x8
     }
@@ -116,7 +126,8 @@ void context(
   // chess_prepare_for_pipelining chess_loop_range(1,) {
     VA Abuf[Tm];
     for (unsigned jm = 0; jm < Tm; ++jm) {
-      Abuf[jm] = readincr_v<MMUL::size_A>(sS); // one tile
+      Abuf[jm] = aie::load_v<MMUL::size_A>(ptrS); // one tile
+      ptrS += MMUL::size_A;
     }
     for (unsigned in = 0; in < Tn; ++in) {
     // chess_prepare_for_pipelining chess_loop_range(1,) {
@@ -128,31 +139,92 @@ void context(
 
       VC v = C.template to_vector<int16>(SHIFT);
       VCout vout = v.pack();
-      writeincr(sC, vout);
+      aie::store_v(ptrC, vout);
+      ptrC += MMUL::size_C;
     }
   }
 }
+
 
 // Concatenate two (m*Tm) x (n*Tn) int8 matrices.
 template <int m, int n, int Tm, int Tn>
 void concat(
-  input_stream_int8 * __restrict sA,
-  input_stream_int8 * __restrict sB,
-  output_stream_int8 * __restrict sC
+  int8_t * __restrict pA,
+  int8_t * __restrict pB,
+  int8_t * __restrict pC
 ) {
   using V = aie::vector<int8, m*n>;
  
+  const int8_t* ptrA = pA;
+  const int8_t* ptrB = pB;
+  int8_t* ptrC = pC;
 
   for (int im = 0; im < Tm; ++im) {
     for (int in = 0; in < Tn; ++in) {
-      writeincr(sC, readincr_v<m*n>(sA));
+      aie::store_v(ptrC, aie::load_v<m*n>(ptrA));
+      ptrA += m*n;
+      ptrC += m*n;
     }
     for (int in = 0; in < Tn; ++in) {
-      writeincr(sC, readincr_v<m*n>(sB));
+      aie::store_v(ptrC, aie::load_v<m*n>(ptrB));
+      ptrB += m*n;
+      ptrC += m*n;
     }
   }
 }
-*/
+
+
+// (context @ Wo)  (T,d_model) @ (d_model,d_model) -> (T,d_model)
+template <int m, int k, int n, int Tm, int Tk, int Tn, int SHIFT_O>
+void output(
+  int8_t* __restrict pA,
+  int8_t* __restrict pB,
+  int8_t* __restrict pO,
+  const int8_t Wo[]
+) {
+  using MMUL = aie::mmul<m, k, n, int8, int8>;
+  using VA   = aie::vector<int8, MMUL::size_A>;
+  using VB   = aie::vector<int8, MMUL::size_B>;
+  using VC   = aie::vector<int8, MMUL::size_C>;
+
+  const int8_t* ptrA = pA;
+  const int8_t* ptrB = pB;
+  int8_t* ptrO = pO;
+
+  const int8* __restrict Bbase = (const int8*)Wo;
+  const unsigned strideB_perK  = MMUL::size_B * Tn;
+
+  for (unsigned im = 0; im < Tm; ++im) {
+  // chess_prepare_for_pipelining chess_loop_range(1,) {
+    VA Abuf[Tk];
+    for (unsigned ik = 0; ik < Tk/2; ++ik) {
+      Abuf[ik] = aie::load_v<MMUL::size_A>(ptrA);
+      ptrA += MMUL::size_A;
+    }
+    for (unsigned ik = Tk/2; ik < Tk; ++ik) {
+      Abuf[ik] = aie::load_v<MMUL::size_A>(ptrB);
+      ptrB += MMUL::size_A;
+    }
+
+    for (unsigned in = 0; in < Tn; ++in) {
+    // chess_prepare_for_pipelining chess_loop_range(1,) {
+      MMUL C;
+      const int8* __restrict pcol = Bbase + in * MMUL::size_B;
+
+      for (unsigned ik = 0; ik < Tk; ++ik) {
+        VB b = aie::load_v<MMUL::size_B>(pcol + ik * strideB_perK);
+        if (ik == 0) C.mul(Abuf[0], b);
+        else         C.mac(Abuf[ik], b);
+      }
+
+      VC v = C.template to_vector<int8>(SHIFT_O);
+      v = aie::max(v, (int8)0);
+      aie::store_v(ptrO, v);
+      ptrO += MMUL::size_C;
+    }
+  }
+}
+
 
 // Add two (m*Tm) x (n*Tn) int8 matrices element-wise with saturation.
 template <int m, int n, int Tm, int Tn>
@@ -176,7 +248,6 @@ void resadd(
             V vB = aie::load_v<m*n>(ptrB);
             V vC = aie::saturating_add(vA, vB);  // saturating addition
             aie::store_v(ptrC, vC);
-            
             ptrA += m*n;
             ptrB += m*n;
             ptrC += m*n;
@@ -184,48 +255,3 @@ void resadd(
     }
 }
 
-/*
-// (context @ Wo)  (T,d_model) @ (d_model,d_model) -> (T,d_model)
-template <int m, int k, int n, int Tm, int Tk, int Tn, int SHIFT_O>
-void output(
-  input_stream_int8* __restrict sA,
-  input_stream_int8* __restrict sB,
-  output_stream_int8* __restrict sO,
-  const int8 Wo[]
-) {
-  using MMUL = aie::mmul<m, k, n, int8, int8>;
-  using VA   = aie::vector<int8, MMUL::size_A>;
-  using VB   = aie::vector<int8, MMUL::size_B>;
-  using VC   = aie::vector<int8, MMUL::size_C>;
-
-  const int8* __restrict Bbase = (const int8*)Wo;
-  const unsigned strideB_perK  = MMUL::size_B * Tn;
-
-  for (unsigned im = 0; im < Tm; ++im) {
-  // chess_prepare_for_pipelining chess_loop_range(1,) {
-    VA Abuf[Tk];
-    for (unsigned ik = 0; ik < Tk/2; ++ik) {
-      Abuf[ik] = readincr_v<MMUL::size_A>(sA);
-    }
-    for (unsigned ik = Tk/2; ik < Tk; ++ik) {
-      Abuf[ik] = readincr_v<MMUL::size_A>(sB);
-    }
-
-    for (unsigned in = 0; in < Tn; ++in) {
-    // chess_prepare_for_pipelining chess_loop_range(1,) {
-      MMUL C;
-      const int8* __restrict pB = Bbase + in * MMUL::size_B;
-
-      for (unsigned ik = 0; ik < Tk; ++ik) {
-        VB b = aie::load_v<MMUL::size_B>(pB + ik * strideB_perK);
-        if (ik == 0) C.mul(Abuf[0], b);
-        else         C.mac(Abuf[ik], b);
-      }
-
-      VC v = C.template to_vector<int8>(SHIFT_O);
-      v = aie::max(v, (int8)0);
-      writeincr(sO, v);
-    }
-  }
-}
-*/
