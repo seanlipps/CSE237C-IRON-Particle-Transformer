@@ -45,7 +45,7 @@ def resadd_ly(input0, input1, output):
 
     resadd_ly_kernel = ExternalFunction(
         "f0",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/resadd_layer_ex.cc"),
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/resadd_layer_copy.cc"),
         arg_types=[in_ty, in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
