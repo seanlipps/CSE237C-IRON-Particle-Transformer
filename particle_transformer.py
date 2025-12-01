@@ -30,7 +30,7 @@ def build_and_run(seed: int = 0):
     # model.add_layer(mha1, inputs=[dense0])
     res1 = ResAddLayer(name='resadd_1')
     # model.add_layer(res1, inputs=[mha1, dense0])
-    model.add_layer(res1, inputs=[None, None])
+    model.add_layer(res1, inputs=[None, None]) # for testing resadd layer so del later
 
     # W_ff1a = rng.integers(-128, 128, size=(ff_dim, ff_dim), dtype=np.int8)
     # ff1a = DenseLayer(name='ff1a', weight=W_ff1a, shift=3, relu=True)
