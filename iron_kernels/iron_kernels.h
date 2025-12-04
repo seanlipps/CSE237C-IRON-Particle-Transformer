@@ -1,7 +1,9 @@
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <aie_api/aie.hpp>
+
 
 template <int m, int k, int n, int Tm, int Tk, int Tn, int SHIFT, bool is_relu>
 void dense(
@@ -83,7 +85,7 @@ void scores(
         if (in == 0) C.mul(Abuf[0], matB[jm*Tn+in]);
         else         C.mac(Abuf[in], matB[jm*Tn+in]);
       }
-      VC V = C.template to_vector<int8>(SHIFT_S);
+      VC v = C.template to_vector<int8>(SHIFT_S);
       aie::store_v(ptrS, v);
       ptrS += MMUL::size_C;
     }
@@ -198,7 +200,7 @@ void output(
   // chess_prepare_for_pipelining chess_loop_range(1,) {
     VA Abuf[Tk];
     for (unsigned ik = 0; ik < Tk/2; ++ik) {
-      Abuf[ik] = aie::load_v<MMUL::size_A>(ptrA);
+      Abuf[ik] = aie::load_v<MMUL::size_A>(ptrA);  
       ptrA += MMUL::size_A;
     }
     for (unsigned ik = Tk/2; ik < Tk; ++ik) {
@@ -209,10 +211,10 @@ void output(
     for (unsigned in = 0; in < Tn; ++in) {
     // chess_prepare_for_pipelining chess_loop_range(1,) {
       MMUL C;
-      const int8* __restrict pcol = Bbase + in * MMUL::size_B;
+      const int8* __restrict pcol = Bbase + in * MMUL::size_B; // pcol points to the starting address of each tile 
 
       for (unsigned ik = 0; ik < Tk; ++ik) {
-        VB b = aie::load_v<MMUL::size_B>(pcol + ik * strideB_perK);
+        VB b = aie::load_v<MMUL::size_B>(pcol + ik * strideB_perK); 
         if (ik == 0) C.mul(Abuf[0], b);
         else         C.mac(Abuf[ik], b);
       }
@@ -254,4 +256,3 @@ void resadd(
         }
     }
 }
-

@@ -9,12 +9,13 @@ public:
   input_plio  AIE_IN;
   output_plio AIE_OUT;
 
-  kernel resadd_1 [1];
+  kernel dense_0 [1];
+  kernel mha_1 [23];
 
   simpleGraph(){
 
     AIE_IN = input_plio::create("DataIn", plio_128_bits, "data/input.txt", 1280);
-    AIE_OUT = output_plio::create("DataOut", plio_128_bits, "data/out_sim.txt", 1280);
+    AIE_OUT = output_plio::create("DataOut", plio_128_bits, "data/out_sim.txt", 10240);
 
     #include "layer_graph.h"
 
