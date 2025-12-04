@@ -44,7 +44,7 @@ def dense_ly(input0, output):
 
     dense_ly_kernel = ExternalFunction(
         "f0",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/dense_layer_copy.cc"),
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/copy-dense_layer.cc"),
         arg_types=[in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
