@@ -83,7 +83,7 @@ void scores(
         if (in == 0) C.mul(Abuf[0], matB[jm*Tn+in]);
         else         C.mac(Abuf[in], matB[jm*Tn+in]);
       }
-      VC V = C.template to_vector<int8>(SHIFT_S);
+      VC v = C.template to_vector<int8>(SHIFT_S);
       aie::store_v(ptrS, v);
       ptrS += MMUL::size_C;
     }
