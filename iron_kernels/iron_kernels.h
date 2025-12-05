@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <aie_api/aie.hpp>
-#include <vector>
+
 
 template <int m, int k, int n, int Tm, int Tk, int Tn, int SHIFT, bool is_relu>
 void dense(
@@ -55,6 +55,7 @@ void scores(
   int8_t * __restrict pK, // adf::input_buffer<int8, adf::extents<T*d_model>> & sK,
   int8_t * __restrict pS
 ) {
+
   using MMUL = aie::mmul<m, n, m, int8, int8>; // 4x8x4
   using VA   = aie::vector<int8, MMUL::size_A>; // 4x8
   using VB   = aie::vector<int8, MMUL::size_B>; // 8x4
@@ -64,7 +65,7 @@ void scores(
   const int8_t* ptrK = pK;
   int8_t* ptrS = pS;
   VB matB[Tm*Tn]; //store all of pK in mem
-
+  
   for (unsigned i = 0; i < Tm; ++i) { // rows
     for (unsigned j = 0; j < Tn; ++j) { // columns
       alignas(32) int8_t tile[m*k];

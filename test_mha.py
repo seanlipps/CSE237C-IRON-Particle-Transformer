@@ -384,7 +384,7 @@ def main():
         dense_ly(inp_tensor, k_output[i]) # 160*64 @ 64*16 = 160*16
         dense_ly(inp_tensor, v_output[i]) # 160*64 @ 64*16 = 160*16
         
-        score_ly(q_output[i], k_output[i], score_output[i]) # 160*16 @ 160*16^T = 160*16 @ 16*160 = 160*160
+        score_ly(q_output[0], k_output[0], score_output[i]) # 160*16 @ 160*16^T = 160*16 @ 16*160 = 160*160
         context_ly(score_output[i], v_output[i], context_output[i]) # 160*160 @ 160*16 = 160*16
 
     # concatenating two times: head0 + head1 and  head2 + head3
