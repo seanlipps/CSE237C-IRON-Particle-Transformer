@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <aie_api/aie.hpp>
-
+#include <vector>
 
 template <int m, int k, int n, int Tm, int Tk, int Tn, int SHIFT, bool is_relu>
 void dense(
@@ -57,7 +57,7 @@ void scores(
 ) {
   using MMUL = aie::mmul<m, n, m, int8, int8>; // 4x8x4
   using VA   = aie::vector<int8, MMUL::size_A>; // 4x8
-  using VB   = aie::vector<int8, MMUL::size_A>; // 8x4
+  using VB   = aie::vector<int8, MMUL::size_B>; // 8x4
   using VC   = aie::vector<int8, MMUL::size_C>; // 4x4
 
   const int8_t* ptrQ = pQ;
@@ -67,7 +67,19 @@ void scores(
 
   for (unsigned i = 0; i < Tm; ++i) { // rows
     for (unsigned j = 0; j < Tn; ++j) { // columns
-      matB[i*Tn+j] = aie::transpose(aie::load_v<MMUL::size_A>(ptrK), m, n);
+      alignas(32) int8_t tile[m*k];
+      alignas(32) int8_t trans_tile[m*k];
+      aie::store_v(tile, aie::load_v<MMUL::size_B>(ptrK));
+
+      unsigned c = 0;
+      for (unsigned a = 0; a < m; a++) {
+          for (unsigned b = 0; b < k; b++) {
+            trans_tile[c] = tile[b * k + a];
+            c++;
+          }
+      }     
+      VB vK = aie::load_v<MMUL::size_B>(trans_tile);
+      matB[i*Tn+j] = vK;
       ptrK += MMUL::size_A;
     }
   }

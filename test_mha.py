@@ -44,7 +44,7 @@ def dense_ly(input0, output):
     # SAXPY operation on X and Y, and writes the result in Z.
 
     dense_ly_kernel = ExternalFunction(
-        "f0",
+        "dense_kernel",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/dense_layer.cc"),
         arg_types=[in_ty, out_ty],
         include_dirs=[
@@ -107,7 +107,7 @@ def score_ly(input0, input1, output):
     # --------------------------------------------------------------------------
 
     score_ly_kernel = ExternalFunction(
-        "f0",
+        "score_kernel",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/score_layer.cc"),
         arg_types=[in_ty, in_ty, out_ty],
         include_dirs=[
@@ -171,7 +171,7 @@ def context_ly(input0, input1, output):
     # --------------------------------------------------------------------------
 
     context_ly_kernel = ExternalFunction(
-        "f0",
+        "context_kernel",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/context_layer.cc"),
         arg_types=[in_ty, in_ty, out_ty],
         include_dirs=[
@@ -239,7 +239,7 @@ def concat_ly(input0, input1, output):
     # SAXPY operation on X and Y, and writes the result in Z.
 
     concat_ly_kernel = ExternalFunction(
-        "f0",
+        "concat_kernel",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/concat_layer.cc"),
         arg_types=[in_ty, in_ty, out_ty],
         include_dirs=[
@@ -307,7 +307,7 @@ def output_ly(input0, input1, output):
     # SAXPY operation on X and Y, and writes the result in Z.
 
     output_ly_kernel = ExternalFunction(
-        "f0",
+        "output_kernel",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/output_layer.cc"),
         arg_types=[in_ty, in_ty, out_ty],
         include_dirs=[
@@ -380,9 +380,9 @@ def main():
 
     # Insantiate AIE Kernel        
     for i in range(4):
-        dense_ly(inp_tensor, q_output[i]) # 160*64 @ 64*64 = 160*64
-        dense_ly(inp_tensor, k_output[i]) # 160*64 @ 64*64 = 160*64
-        dense_ly(inp_tensor, v_output[i]) # 160*64 @ 64*64 = 160*64
+        dense_ly(inp_tensor, q_output[i]) # 160*64 @ 64*16 = 160*16
+        dense_ly(inp_tensor, k_output[i]) # 160*64 @ 64*16 = 160*16
+        dense_ly(inp_tensor, v_output[i]) # 160*64 @ 64*16 = 160*16
         
         score_ly(q_output[i], k_output[i], score_output[i]) # 160*64 @ 160*64^T = 160*64 @ 64*160 = 160*160
         context_ly(score_output[i], v_output[i], context_output[i]) # 160*160 @ 160*64 = 160*64
