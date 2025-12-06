@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <aie_api/aie.hpp>
-
+#include <vector>
 
 template <int m, int k, int n, int Tm, int Tk, int Tn, int SHIFT, bool is_relu>
 void dense(
@@ -55,30 +55,35 @@ void scores(
   int8_t * __restrict pK, // adf::input_buffer<int8, adf::extents<T*d_model>> & sK,
   int8_t * __restrict pS
 ) {
-
-  using MMUL = aie::mmul<m, n, m, int8, int8>; // 4x8x4
+  using MMUL = aie::mmul<m, n, n, int8, int8>; // 4x8x8
   using VA   = aie::vector<int8, MMUL::size_A>; // 4x8
-  using VB   = aie::vector<int8, MMUL::size_B>; // 8x4
-  using VC   = aie::vector<int8, MMUL::size_C>; // 4x4
+  using VB   = aie::vector<int8, MMUL::size_B>; // 8x8
+  using VC   = aie::vector<int8, MMUL::size_C>; // 4x8
+
+  using VCout= aie::vector<int8, m*m>; // 4x4
 
   const int8_t* ptrQ = pQ;
   const int8_t* ptrK = pK;
   int8_t* ptrS = pS;
-  VB matB[Tm*Tn]; //store all of pK in mem
-  
+  VB matB[Tk*Tn]; //store all of pK in mem
+
   for (unsigned i = 0; i < Tm; ++i) { // rows
     for (unsigned j = 0; j < Tn; ++j) { // columns
-      alignas(32) int8_t tile[m*k];
-      alignas(32) int8_t trans_tile[m*k];
-      aie::store_v(tile, aie::load_v<MMUL::size_B>(ptrK));
+      alignas(32) int8_t tile[m*k]; //4x8
+      alignas(32) int8_t trans_tile[k*n] = {}; //8x8
+      aie::store_v(tile, aie::load_v<m*k>(ptrK));
 
       unsigned c = 0;
-      for (unsigned a = 0; a < m; a++) {
-          for (unsigned b = 0; b < k; b++) {
+      for (unsigned b = 0; b < k; b++) {
+          for (unsigned a = 0; a < m; a++) {
             trans_tile[c] = tile[b * k + a];
             c++;
           }
-      }     
+          for (unsigned a = 0; a < m; a++) {
+            trans_tile[c] = 0;
+            c++;
+          }
+      }
       VB vK = aie::load_v<MMUL::size_B>(trans_tile);
       matB[i*Tn+j] = vK;
       ptrK += MMUL::size_A;
@@ -98,7 +103,9 @@ void scores(
         if (in == 0) C.mul(Abuf[0], matB[jm*Tn+in]);
         else         C.mac(Abuf[in], matB[jm*Tn+in]);
       }
-      VC v = C.template to_vector<int8>(SHIFT_S);
+      VC v = C.template to_vector<int8>(SHIFT_S); //4x8
+      
+      // VCOUT vout=  //4x4
       aie::store_v(ptrS, v);
       ptrS += MMUL::size_C;
     }

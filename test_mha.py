@@ -97,10 +97,12 @@ def score_ly(input0, input1, output):
 
     in_ty = np.ndarray[(N,), np.dtype[element_type]]
     out_ty = np.ndarray[(N_out,), np.dtype[element_type]]
+    out_tyx2 = np.ndarray[(N_out*2,), np.dtype[element_type]]
 
     of_x = ObjectFifo(in_ty, depth=1, name="x")
     of_y = ObjectFifo(in_ty, depth=1, name="y")
-    of_z = ObjectFifo(out_ty, depth=1, name="z")
+    # of_z = ObjectFifo(out_ty, depth=1, name="z")
+    of_z = ObjectFifo(out_tyx2, depth=1, name="z")
 
     # --------------------------------------------------------------------------
     # Task each core will run
@@ -109,7 +111,7 @@ def score_ly(input0, input1, output):
     score_ly_kernel = ExternalFunction(
         "score_kernel",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/score_layer.cc"),
-        arg_types=[in_ty, in_ty, out_ty],
+        arg_types=[in_ty, in_ty, out_tyx2],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
@@ -372,7 +374,7 @@ def main():
     k_output = [iron.zeros(160*64, dtype=element_type, device="npu") for _ in range(4)]
     v_output = [iron.zeros(160*64, dtype=element_type, device="npu") for _ in range(4)]
 
-    score_output = [iron.zeros(160*160, dtype=element_type, device="npu") for _ in range(4)]
+    score_output = [iron.zeros(160*160*2, dtype=element_type, device="npu") for _ in range(4)]
     context_output = [iron.zeros(160*64, dtype=element_type, device="npu") for _ in range(4)]
     
     concat_output = [iron.zeros(160*128, dtype=element_type, device="npu") for _ in range(2)]
@@ -385,6 +387,7 @@ def main():
         dense_ly(inp_tensor, v_output[i]) # 160*64 @ 64*16 = 160*16
         
         score_ly(q_output[0], k_output[0], score_output[i]) # 160*16 @ 160*16^T = 160*16 @ 16*160 = 160*160
+        print(score_output[i]);
         context_ly(score_output[i], v_output[i], context_output[i]) # 160*160 @ 160*16 = 160*16
 
     # concatenating two times: head0 + head1 and  head2 + head3
