@@ -56,10 +56,10 @@ void scores(
   int8_t * __restrict pS
 ) {
 
-  using MMUL = aie::mmul<m, n, m, int8, int8>; // 4x8x4
+  using MMUL = aie::mmul<m, k, n, int8, int8>; // 4x8x8
   using VA   = aie::vector<int8, MMUL::size_A>; // 4x8
-  using VB   = aie::vector<int8, MMUL::size_B>; // 8x4
-  using VC   = aie::vector<int8, MMUL::size_C>; // 4x4
+  using VB   = aie::vector<int8, MMUL::size_B>; // 8x8
+  using VC   = aie::vector<int8, MMUL::size_C>; // 8x4
 
   const int8_t* ptrQ = pQ;
   const int8_t* ptrK = pK;
@@ -103,6 +103,7 @@ void scores(
       ptrS += MMUL::size_C;
     }
   }
+    
 }
 
 
@@ -115,12 +116,12 @@ void context(
   int8_t * __restrict pV,
   int8_t * __restrict pC
 ) {
-  using MMUL = aie::mmul<m, m, n, int8, int16>; // 4x4x8 -> 4x8
-  using VA   = aie::vector<int8,  MMUL::size_A>; // 4x4 (int8)
-  using VB   = aie::vector<int16, MMUL::size_B>; // 4x8 (int16)
+  using MMUL = aie::mmul<m, m, n, int8, int16>; // 4x8x8 -> 4x8
+  using VA   = aie::vector<int8,  MMUL::size_A>; // 4x8 (int8)
+  using VB   = aie::vector<int16, MMUL::size_B>; // 8x8 (int16)
   using VC   = aie::vector<int16, MMUL::size_C>; // 4x8 (int16)
 
-  using VBin = aie::vector<int8, MMUL::size_B>; // 4x8 (int8)
+  using VBin = aie::vector<int8, MMUL::size_B>; // 8x8 (int8)
   using VCout = aie::vector<int8, MMUL::size_C>; // 4x8 (int8)
 
   const int8_t* ptrS = pS;
