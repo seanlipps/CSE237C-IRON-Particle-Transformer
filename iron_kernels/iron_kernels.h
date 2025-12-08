@@ -67,24 +67,20 @@ void scores(
   int8_t* ptrS = pS;
   VB matB[Tk*Tn]; //store all of pK in mem
 
-  for (unsigned i = 0; i < Tm; ++i) { // rows
-    for (unsigned j = 0; j < Tn; ++j) { // columns
-      alignas(32) int8_t tile[m*k]; //4x8
-      alignas(32) int8_t trans_tile[k*n] = {}; //8x8
+  for (unsigned i = 0; i < Tk; ++i) {
+    for (unsigned j = 0; j < Tn; ++j) {
+      int8_t tile[m*k]; //4x8
+      int8_t trans_tile[k*n] = {}; //8x8, initialize with 0s
       aie::store_v(tile, aie::load_v<m*k>(ptrK));
 
       unsigned c = 0;
-      for (unsigned b = 0; b < k; b++) {
-          for (unsigned a = 0; a < m; a++) {
-            trans_tile[c] = tile[b * k + a];
-            c++;
-          }
-          for (unsigned a = 0; a < m; a++) {
-            trans_tile[c] = 0;
+      for (unsigned a = 0; a < k; a++) { //trans_tile gets 8x4 of data
+          for (unsigned b = 0; b < n/2; b++) { 
+            trans_tile[b*n+a] = tile[c];
             c++;
           }
       }
-      VB vK = aie::load_v<MMUL::size_B>(trans_tile);
+      VB vK = aie::load_v<MMUL::size_B>(trans_tile); //8x8
       matB[i*Tn+j] = vK;
       ptrK += MMUL::size_A;
     }
@@ -104,10 +100,17 @@ void scores(
         else         C.mac(Abuf[in], matB[jm*Tn+in]);
       }
       VC v = C.template to_vector<int8>(SHIFT_S); //4x8
-      
-      // VCOUT vout=  //4x4
-      aie::store_v(ptrS, v);
-      ptrS += MMUL::size_C;
+      int8_t tile[MMUL::size_C]; //4x8
+      int8_t out_tile[m*m] = {}; //4x4
+      aie::store_v(tile, v);
+      for (unsigned r = 0; r < m; ++r) {
+          for (unsigned c = 0; c < m; ++c) {
+              out_tile[r*m+c] = tile[r*n+c];
+          }
+      }
+      VCout vout= aie::load_v<m*m>(out_tile);//4x4
+      aie::store_v(ptrS, vout);
+      ptrS += MMUL::size_C; 
     }
   }
 }
