@@ -94,7 +94,7 @@ def main():
 
     INPUT_ROWS = 160
     INPUT_COLS = 8
-    OUTPUT_SIZE = 160 * 64
+    OUTPUT_SIZE = 160 * 8
 
     if inp0.size != INPUT_ROWS * INPUT_COLS:
         raise ValueError(f"input0 size {inp.size} != {INPUT_ROWS*INPUT_COLS}")
@@ -115,7 +115,7 @@ def main():
     resadd_ly(inp0_tensor, inp1_tensor, output)
 
     out_np = np.array(output, dtype=np.int8)
-
+    
     errors = 0
     for i, (a, r) in enumerate(zip(out_np, ref)):
         if a != r:
