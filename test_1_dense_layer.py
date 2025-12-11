@@ -44,7 +44,7 @@ def dense_ly(input0, output):
 
     dense_ly_kernel = ExternalFunction(
         "f0",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/copy-dense_layer.cc"),
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/test_1_layer_0.cc"),
         arg_types=[in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
@@ -84,8 +84,8 @@ def dense_ly(input0, output):
 def main():
     element_type = np.int8
     
-    inp = np.loadtxt("./iron_kernels/test_data/dense_input.txt", dtype=np.int8)
-    ref = np.loadtxt("./iron_kernels/test_data/dense_out_ref.txt", dtype=np.int8).flatten()
+    inp = np.loadtxt("./iron_kernels/test_data/test_1_dense_input.txt", dtype=np.int8)
+    ref = np.loadtxt("./iron_kernels/test_data/test_1_dense_out_ref.txt", dtype=np.int8).flatten()
 
     INPUT_ROWS = 160
     INPUT_COLS = 8
