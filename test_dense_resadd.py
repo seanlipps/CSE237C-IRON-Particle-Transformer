@@ -1,3 +1,5 @@
+# The test a 3 layer model where model input is connected to 2 dense layers then those 
+# 2 dense layer are connected to 1 resadd layer for final output
 
 # from ml_dtypes import bfloat16
 import numpy as np
@@ -20,7 +22,7 @@ from aie.utils.config import cxx_header_path
 #     - is_placed (bool): Whether the kernel is using explicit or deferred placement API. Defaults to True.
 #     - use_cache (bool): Use cached MLIR module if available. Defaults to True.
 @iron.jit(is_placed=False)
-def dense_ly(input0, output):
+def dense_ly(input0, input1, output):
     N = input0.shape[0]  # Tensor size
     N_out = output.shape[0]
     element_type = output.dtype
@@ -32,11 +34,11 @@ def dense_ly(input0, output):
     in_ty = np.ndarray[(N,), np.dtype[element_type]]
     out_ty = np.ndarray[(N_out,), np.dtype[element_type]]
 
-    of_0 = ObjectFifo(in_ty, name="dense_in")
-    of_1 = ObjectFifo(out_ty, name="dense_to_res")
-    of_1_1 = of_1.cons().forward(obj_type=out_ty, name="dense_to_res_1")
-    of_1_2 = of_1_1.cons().forward(obj_type=out_ty, name="dense_to_res_2")
-    of_2 = ObjectFifo(out_ty, name="resadd_out")
+    of_0 = ObjectFifo(in_ty, name="dense_in_0")
+    of_1 = ObjectFifo(in_ty, name="dense_in_1")
+    of_2 = ObjectFifo(out_ty, name="desnse_to_resadd_0")
+    of_3 = ObjectFifo(out_ty, name="desnse_to_resadd_1")
+    of_4 = ObjectFifo(out_ty, name="resadd_out")
 
     # --------------------------------------------------------------------------
     # Task each core will run
@@ -45,9 +47,18 @@ def dense_ly(input0, output):
     # The kernel acquires input tensors X and Y, and output tensor Z, performs the
     # SAXPY operation on X and Y, and writes the result in Z.
 
-    dense_ly_kernel = ExternalFunction(
+    dense_ly_kernel_0 = ExternalFunction(
         "f0",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_0.cc"),
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/copy_dense_layer_0.cc"),
+        arg_types=[in_ty, out_ty],
+        include_dirs=[
+            cxx_header_path(),
+            os.path.join(os.path.dirname(__file__), "iron_kernels")
+        ],
+    )
+    dense_ly_kernel_1 = ExternalFunction(
+        "f1",
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/copy_dense_layer_1.cc"),
         arg_types=[in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
@@ -55,8 +66,8 @@ def dense_ly(input0, output):
         ],
     )
     resadd_ly_kernel = ExternalFunction(
-        "f1",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1.cc"),
+        "f2",
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/copy_resadd_layer_2.cc"),
         arg_types=[out_ty, out_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
@@ -81,18 +92,20 @@ def dense_ly(input0, output):
         of_z.release(1)
 
     workers = []
-    workers.append(Worker(core_body_1_in, fn_args=[of_0.cons(), of_1.prod(), dense_ly_kernel]))
-    workers.append(Worker(core_body_2_in, fn_args=[of_1_1.cons(), of_1_2.cons(), of_2.prod(), resadd_ly_kernel]))
+    workers.append(Worker(core_body_1_in, fn_args=[of_0.cons(), of_2.prod(), dense_ly_kernel_0]))
+    workers.append(Worker(core_body_1_in, fn_args=[of_1.cons(), of_3.prod(), dense_ly_kernel_1]))
+    workers.append(Worker(core_body_2_in, fn_args=[of_2.cons(), of_3.cons(), of_4.prod(), resadd_ly_kernel]))
 
     # --------------------------------------------------------------------------
     # DRAM-NPU data movement and work dispatch
     # --------------------------------------------------------------------------
 
     rt = Runtime()
-    with rt.sequence(in_ty, out_ty) as (a_x, c_z):
+    with rt.sequence(in_ty, in_ty, out_ty) as (a_x, b_y, c_z):
         rt.start(*workers)
         rt.fill(of_0.prod(), a_x)
-        rt.drain(of_2.cons(), c_z, wait=True)
+        rt.fill(of_1.prod(), b_y)
+        rt.drain(of_4.cons(), c_z, wait=True)
 
     # --------------------------------------------------------------------------
     # Place and generate MLIR program
@@ -123,7 +136,7 @@ def main():
     output = iron.zeros(OUTPUT_SIZE, dtype=element_type, device="npu")
 
     # Insantiate AIE Kernel
-    dense_ly(inp_tensor, output)
+    dense_ly(inp_tensor, inp_tensor, output)
 
     out_np = np.array(output, dtype=np.int8)
 

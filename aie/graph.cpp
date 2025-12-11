@@ -10,6 +10,7 @@ public:
   output_plio AIE_OUT;
 
   kernel dense_0 [1];
+  kernel dense_1 [1];
   kernel resadd_1 [1];
 
   simpleGraph(){
