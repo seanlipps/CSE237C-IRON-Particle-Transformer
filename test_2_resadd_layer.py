@@ -45,7 +45,7 @@ def resadd_ly(input0, input1, output):
 
     resadd_ly_kernel = ExternalFunction(
         "f0",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/copy-resadd_layer.cc"),
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/test_2_layer_0.cc"),
         arg_types=[in_ty, in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
@@ -88,9 +88,9 @@ def resadd_ly(input0, input1, output):
 def main():
     element_type = np.int8
     
-    inp0 = np.loadtxt("./iron_kernels/test_data/resadd_input0.txt", dtype=np.int8)
-    inp1 = np.loadtxt("./iron_kernels/test_data/resadd_input1.txt", dtype=np.int8)
-    ref = np.loadtxt("./iron_kernels/test_data/resadd_out_ref.txt", dtype=np.int8).flatten()
+    inp0 = np.loadtxt("./iron_kernels/test_data/test_2_input0.txt", dtype=np.int8)
+    inp1 = np.loadtxt("./iron_kernels/test_data/test_2_input1.txt", dtype=np.int8)
+    ref = np.loadtxt("./iron_kernels/test_data/test_2_out_ref.txt", dtype=np.int8).flatten()
 
     INPUT_ROWS = 160
     INPUT_COLS = 8
