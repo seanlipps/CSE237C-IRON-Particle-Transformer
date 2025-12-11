@@ -21,14 +21,23 @@ def build_and_run(seed: int = 0):
     dense0 = DenseLayer(name='dense_0', weight=W_fc0, shift=2, relu=True)
     model.add_layer(dense0, inputs=[None])  # connect to AIE_IN under the hood
 
-    Wq = rng.integers(-128, 128, size=(ff_dim, ff_dim), dtype=np.int8)
-    Wk = rng.integers(-128, 128, size=(ff_dim, ff_dim), dtype=np.int8)
-    Wv = rng.integers(-128, 128, size=(ff_dim, ff_dim), dtype=np.int8)
-    Wo = rng.integers(-128, 128, size=(ff_dim, ff_dim), dtype=np.int8)
+    W_fc1 = rng.integers(-128, 128, size=(ff_dim, ff_dim), dtype=np.int8) # for testing dense->resadd only so del later
+    dense1 = DenseLayer(name='dense_1', weight=W_fc1, shift=3, relu=True) # for testing dense->resadd only so del later
+    model.add_layer(dense1, inputs=[dense0]) # for testing dense->resadd only so del later
+    dense2 = DenseLayer(name='dense_2', weight=W_fc1, shift=3, relu=True) # for testing dense->resadd only so del later
+    model.add_layer(dense2, inputs=[dense0]) # for testing dense->resadd only so del later
 
-    mha1 = MHALayer(name='mha_1', Wq=Wq, Wk=Wk, Wv=Wv, Wo=Wo, num_heads=4, d_model=ff_dim, T=num_particles_pad)
-    model.add_layer(mha1, inputs=[dense0])
+    # Wq = rng.integers(-128, 128, size=(ff_dim, ff_dim), dtype=np.int8)
+    # Wk = rng.integers(-128, 128, size=(ff_dim, ff_dim), dtype=np.int8)
+    # Wv = rng.integers(-128, 128, size=(ff_dim, ff_dim), dtype=np.int8)
+    # Wo = rng.integers(-128, 128, size=(ff_dim, ff_dim), dtype=np.int8)
+
+    # mha1 = MHALayer(name='mha_1', Wq=Wq, Wk=Wk, Wv=Wv, Wo=Wo, num_heads=4, d_model=ff_dim, T=num_particles_pad)
+    # model.add_layer(mha1, inputs=[dense0])
+    res1 = ResAddLayer(name='resadd_1')
+    model.add_layer(res1, inputs=[dense1, dense2]) # for testing dense->resadd only so del later
     # model.add_layer(res1, inputs=[mha1, dense0])
+    
 
     # W_ff1a = rng.integers(-128, 128, size=(ff_dim, ff_dim), dtype=np.int8)
     # ff1a = DenseLayer(name='ff1a', weight=W_ff1a, shift=3, relu=True)
