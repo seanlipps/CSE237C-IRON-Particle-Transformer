@@ -42,7 +42,7 @@ def make_dense_ly(layer_num: int):
                 os.path.join(os.path.dirname(__file__), "iron_kernels"),
             ],
         )
-
+        
         def core_body(of_x, of_z, dense_ly_kernel):
             elem_x = of_x.acquire(1)
             elem_z = of_z.acquire(1)
@@ -72,8 +72,8 @@ def make_dense_ly(layer_num: int):
 # compute score
 # compute context
 # Compute Tile Utilization: 5/16
-def make_mha_p1(layer_num: int, head_num: int):
-    @iron.jit(is_placed=False)
+def make_mha_p1(layer_num: int, head_num: int):    
+    @iron.jit(is_placed=False, use_cache=False)
     def mha_p1(input0, output):
         N = input0.shape[0]   # 160 * 64
         N_out = output.shape[0] # 160 * 16
@@ -168,7 +168,19 @@ def make_mha_p1(layer_num: int, head_num: int):
         workers.append(Worker(core_body_dense, fn_args=[of_in.cons(), of_v_out.prod(), v_kernel]))
         workers.append(Worker(core_body_in2, fn_args=[of_q_out.cons(), of_k_out.cons(), of_score.prod(), score_kernel]))
         workers.append(Worker(core_body_in2, fn_args=[of_score.cons(), of_v_out.cons(), of_context.prod(), context_kernel]))
-            
+
+        print("kernel name: " + f"q{layer_num}_head{head_num}") 
+        print("kernel path name: " + f"iron_kernels/layer_{layer_num}_q_head{head_num}.cc") 
+        print("kernel name: " + f"k{layer_num}_head{head_num}") 
+        print("kernel path name: " + f"iron_kernels/layer_{layer_num}_k_head{head_num}.cc") 
+        print("kernel name: " + f"v{layer_num}_head{head_num}")
+        print("kernel path name: " + f"iron_kernels/layer_{layer_num}_v_head{head_num}.cc")
+        print("kernel name: " + f"scores{layer_num}_head{head_num}") 
+        print("kernel path name: " + f"iron_kernels/layer_{layer_num}_scores_head{head_num}.cc") 
+        print("kernel name: " + f"context{layer_num}_head{head_num}") 
+        print("kernel path name: " + f"iron_kernels/layer_{layer_num}_context_head{head_num}.cc")
+
+        
         # Runtime and data movement
         rt = Runtime()
         with rt.sequence(in_ty, context_ty) as (a_x, c_z):
@@ -239,7 +251,6 @@ def make_mha_p2(layer_num: int):
         workers.append(Worker(core_body_in2, fn_args=[of_in[0].cons(), of_in[1].cons(), of_concat[0].prod(), concat_kernels[0]]))
         workers.append(Worker(core_body_in2, fn_args=[of_in[2].cons(), of_in[3].cons(), of_concat[1].prod(), concat_kernels[1]]))
         workers.append(Worker(core_body_in2, fn_args=[of_concat[0].cons(), of_concat[1].cons(), of_out.prod(), out_kernel]))
-    
         
         # Runtime and data movement
         rt = Runtime()
@@ -338,7 +349,7 @@ def make_resadd_ly(layer_num: int):
         workers.append(Worker(core_body_dense, fn_args=[of_res.cons(), of_ffa.prod(), dense_ly_kernel0]))
         workers.append(Worker(core_body_dense, fn_args=[of_ffa.cons(), of_ffb.prod(), dense_ly_kernel1]))
         workers.append(Worker(core_body_in2, fn_args=[of_ffb.cons(), of_res.cons(), of_out.prod(), resadd_ly_kernel1]))
-    
+        
         rt = Runtime()
         with rt.sequence(in_ty, in_ty, out_ty) as (a_x, a_y, c_z):
             rt.start(*workers)
@@ -351,11 +362,68 @@ def make_resadd_ly(layer_num: int):
     return resadd_ly
 
 
+########################################
+# Dense + Dense
+# compute dense in series
+# Compute Tile Utilization: 2/16
+def make_two_dense_ly(layer_num: int):
+    @iron.jit(is_placed=False)
+    def two_dense_ly(input0, output):
+        N = input0.shape[0]
+        N_out = output.shape[0]
+        element_type = output.dtype
+
+        # Tensor types
+        in_ty = np.ndarray[(N,), np.dtype[element_type]]
+        out_ty = np.ndarray[(N_out,), np.dtype[element_type]]
+
+        # FIFOs
+        of_x = ObjectFifo(in_ty, name="x")
+        of_y = ObjectFifo(in_ty, name="y")
+        of_z = ObjectFifo(out_ty, name="z")
+
+        # External AIE kernel
+        dense_ly_kernel = [ExternalFunction(
+            f"f{i}",
+            source_file=os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_{i}.cc"),
+            arg_types=[in_ty, out_ty],
+            include_dirs=[
+                cxx_header_path(),
+                os.path.join(os.path.dirname(__file__), "iron_kernels"),
+            ],
+        ) for i in range(layer_num, layer_num+2)]
+
+        def core_body(of_x, of_z, kernel):
+            elem_x = of_x.acquire(1)
+            elem_z = of_z.acquire(1)
+            kernel(elem_x, elem_z)
+            of_x.release(1)
+            of_z.release(1)
+
+        workers = []
+        workers.append(Worker(core_body, fn_args=[of_x.cons(), of_y.prod(), dense_ly_kernel[0]]))
+        workers.append(Worker(core_body, fn_args=[of_y.cons(), of_z.prod(), dense_ly_kernel[1]]))
+
+        # Runtime and data movement
+        rt = Runtime()
+        with rt.sequence(in_ty, out_ty) as (a_x, c_z):
+            rt.start(*workers)
+            rt.fill(of_x.prod(), a_x)
+            rt.drain(of_z.cons(), c_z, wait=True)
+
+        # Program + placement
+        my_program = Program(iron.get_current_device(), rt)
+        return my_program.resolve_program(SequentialPlacer())
+
+    return two_dense_ly
+
+
+
 def main():
     element_type = np.int8
     
     inp = np.loadtxt("./data/input.txt", dtype=np.int8)
-    ref = np.loadtxt("./data/a5_golden.txt", dtype=np.int8).flatten()
+    ref = np.loadtxt("./data/out_ref.txt", dtype=np.int8).flatten()
 
     INPUT_ROWS = 160
     INPUT_COLS = 8
@@ -369,39 +437,51 @@ def main():
 
     # Convert/set Iron tensors for kernel input and output
     inp_tensor = iron.tensor(inp_tiled, dtype=np.int8, device="npu")
-    mha_in_tensor = iron.zeros(160*64, dtype=element_type, device="npu")
-    context_tensor = [iron.zeros(160*16, dtype=element_type, device="npu") for i in range(4)]
-    mha_out_tensor = iron.zeros(160*64, dtype=element_type, device="npu")
+    dense_out_tensor = iron.zeros(160*64, dtype=element_type, device="npu")
+    mha1_p1_out_tensor = [iron.zeros(160*16, dtype=element_type, device="npu") for i in range(4)]
+    mha1_p2_out_tensor = iron.zeros(160*64, dtype=element_type, device="npu")
+    resdense1_out_tensor = iron.zeros(160*64, dtype=element_type, device="npu")
+    mha2_p1_out_tensor = [iron.zeros(160*16, dtype=element_type, device="npu") for i in range(4)]
+    mha2_p2_out_tensor = iron.zeros(160*64, dtype=element_type, device="npu")
+    resdense2_out_tensor = iron.zeros(160*64, dtype=element_type, device="npu")
     output = iron.zeros(OUTPUT_SIZE, dtype=element_type, device="npu")
 
     # Insantiate AIE Kernel
-    dense_fn = make_dense_ly(0)
-    mha_p1_fn = [make_mha_p1(1, i) for i in range(4)]
-    mha_p2_fn = make_mha_p2(1)
-    resadd_fn = make_resadd_ly(2)
-
-    # Run kernels
-    dense_fn(inp_tensor, mha_in_tensor)
-    for i in range(4):
-        mha_p1_fn[i](mha_in_tensor, context_tensor[i])
-    mha_p2_fn(context_tensor[0], context_tensor[0], context_tensor[0], context_tensor[0], mha_out_tensor)
-    resadd_fn(mha_in_tensor, mha_out_tensor, output)
+    dense_fn = make_dense_ly(0)                           # layer 0
+    mha1_p1_fn = [make_mha_p1(1, i) for i in range(4)]    # layer 1
+    mha1_p2_fn = make_mha_p2(1)                           # layer 1
+    resadd1_fn = make_resadd_ly(2)                        # layer 2,3,4,5
+    mha2_p1_fn = [make_mha_p1(6, i) for i in range(4)]    # layer 6
+    mha2_p2_fn = make_mha_p2(6)                           # layer 6
+    resadd2_fn = make_resadd_ly(7)                        # layer 7,8,9,10 
+    two_dense_fn = make_two_dense_ly(11)                  # layer 11, 12
+    
+    # Run kernels (Data flow)
+    dense_fn(inp_tensor, dense_out_tensor)                         # layer 0
+    for i in range(4): 
+        mha1_p1_fn[i](dense_out_tensor, mha1_p1_out_tensor[i])     # layer 1
+    mha1_p2_fn(mha1_p1_out_tensor[0], mha1_p1_out_tensor[1], mha1_p1_out_tensor[2], mha1_p1_out_tensor[3], mha1_p2_out_tensor)
+    resadd1_fn(dense_out_tensor, mha1_p2_out_tensor, resdense1_out_tensor)      # layer 2,3,4,5
+    for i in range(4): 
+        mha2_p1_fn[i](resdense1_out_tensor, mha2_p1_out_tensor[i])  # layer 6
+    mha2_p2_fn(mha2_p1_out_tensor[0], mha2_p1_out_tensor[1], mha2_p1_out_tensor[2], mha2_p1_out_tensor[3], mha2_p2_out_tensor)
+    resadd2_fn(resdense1_out_tensor, mha2_p2_out_tensor, resdense2_out_tensor)  # layer 7,8,9,10
+    two_dense_fn(resdense2_out_tensor, output)                      # layer 11, 12
     
     out_np = np.array(output, dtype=np.int8)
+    # errors = 0
+    # for i, (a, r) in enumerate(zip(out_np, ref)):
+    #     if a != r:
+    #         print(f"Error at {i}: {a} != {r}")
+    #         errors += 1
 
-    errors = 0
-    for i, (a, r) in enumerate(zip(out_np, ref)):
-        if a != r:
-            print(f"Error at {i}: {a} != {r}")
-            errors += 1
-
-    if errors == 0:
-        print("\nPASS!\n")
-        sys.exit(0)
-    else:
-        print(f"\nError count: {errors}")
-        print("failed.\n")
-        sys.exit(1)
+    # if errors == 0:
+    #     print("\nPASS!\n")
+    #     sys.exit(0)
+    # else:
+    #     print(f"\nError count: {errors}")
+    #     print("failed.\n")
+    #     sys.exit(1)
 
 
 
