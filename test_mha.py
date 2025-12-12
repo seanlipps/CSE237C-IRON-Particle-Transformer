@@ -334,10 +334,10 @@ def main():
         raise ValueError(f"input size {inp.size} != {INPUT_ROWS * INPUT_COLS}")
 
     inp_mat = inp.reshape(INPUT_ROWS, INPUT_COLS)
-    inp_tiled = tile_matrix(inp_mat, 4, 8)  # flattened tiled input
+    #inp_tiled = tile_matrix(inp_mat, 4, 8)  # flattened tiled input
 
     # Convert/set Iron tensors for kernel input
-    inp_tensor = iron.tensor(inp_tiled, dtype=np.int8, device="npu")
+    inp_tensor = iron.tensor(inp_mat, dtype=np.int8, device="npu")
 
     q_output = [iron.zeros(160 * 16, dtype=element_type, device="npu") for _ in range(4)]
     k_output = [iron.zeros(160 * 16, dtype=element_type, device="npu") for _ in range(4)]

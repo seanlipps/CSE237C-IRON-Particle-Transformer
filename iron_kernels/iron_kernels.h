@@ -1,4 +1,3 @@
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,10 +10,10 @@ int8_t * __restrict pA,
 int8_t * __restrict pC,
 const int8_t * matB
 ) {
-    using MMUL = aie::mmul<m, k, n, int8, int8>;
-    using VA   = aie::vector<int8, MMUL::size_A>;
-    using VB   = aie::vector<int8, MMUL::size_B>;
-    using VC   = aie::vector<int8, MMUL::size_C>;
+    using MMUL = aie::mmul<m, k, n, int8, int8>; // 4x8x8
+    using VA   = aie::vector<int8, MMUL::size_A>; // 4x8
+    using VB   = aie::vector<int8, MMUL::size_B>; // 8x8
+    using VC   = aie::vector<int8, MMUL::size_C>; // 4x8
     
     const int8_t* __restrict Bbase = matB;
     const unsigned strideB_perK  = MMUL::size_B * Tn;
@@ -47,40 +46,28 @@ const int8_t * matB
 }
 
 
-// (Q @ K^T):  (T, d_model) @ (T, d_model)^T -> (T, T)
-// m=4, k=8, n=8, T=160, d_model=64, Tm(rows)=160/m=40, Tn(columns)=64/n=8
+// (Q @ K^T):  (T, head_dim) @ (T, head_dim)^T -> (T, T)
+// 160*16 @ 160*16^T = 160*160
+// m=4, k=8, n=8, T=160, d_model=64, head_dim = 64/4 = 16, Tm(rows)=160/m=40, Tk = head_dim/k = 16/8 = 2, Tn (columns)= head_dim/k = 16/8 = 2
 template <int m, int k, int n, int Tm, int Tk, int Tn, int d_model, int T, int SHIFT_S>
 void scores(
   int8_t * __restrict pQ, // adf::input_buffer<int8, adf::extents<T*d_model>> & sQ,
   int8_t * __restrict pK, // adf::input_buffer<int8, adf::extents<T*d_model>> & sK,
   int8_t * __restrict pS
 ) {
-
   using MMUL = aie::mmul<m, k, n, int8, int8>; // 4x8x8
   using VA   = aie::vector<int8, MMUL::size_A>; // 4x8
   using VB   = aie::vector<int8, MMUL::size_B>; // 8x8
-  using VC   = aie::vector<int8, MMUL::size_C>; // 8x4
+  using VC   = aie::vector<int8, MMUL::size_C>; // 4x8
 
   const int8_t* ptrQ = pQ;
   const int8_t* ptrK = pK;
   int8_t* ptrS = pS;
   VB matB[Tm*Tn]; //store all of pK in mem
-  
+
   for (unsigned i = 0; i < Tm; ++i) { // rows
     for (unsigned j = 0; j < Tn; ++j) { // columns
-      alignas(32) int8_t tile[m*k];
-      alignas(32) int8_t trans_tile[m*k];
-      aie::store_v(tile, aie::load_v<MMUL::size_B>(ptrK));
-
-      unsigned c = 0;
-      for (unsigned a = 0; a < m; a++) {
-          for (unsigned b = 0; b < k; b++) {
-            trans_tile[c] = tile[b * k + a];
-            c++;
-          }
-      }     
-      VB vK = aie::load_v<MMUL::size_B>(trans_tile);
-      matB[i*Tn+j] = vK;
+      matB[i*Tn+j] = aie::transpose(aie::load_v<MMUL::size_B>(ptrK), m, n);
       ptrK += MMUL::size_A;
     }
   }
@@ -103,25 +90,24 @@ void scores(
       ptrS += MMUL::size_C;
     }
   }
-    
 }
 
 
-// (scores @ V)  (T,T) @ (T,d_model) -> (T,d_model)
-// Tm = 160/4 = 40, Tk = 160/4 = 40, Tn = 64/8 = 8
-// 160 x 160 x 64 tiled with 4 x 4 x 8
+// (scores @ V)  (T,T) @ (T,head_dim) -> (T,head_dim)
+// Tm = 160/4 = 40, Tk = 160/8 = 20, Tn = 16/8 = 2
+// 160 x 160 x 16 tiled with 4 x 8 x 8
 template <int m, int k, int n, int Tm, int Tk, int Tn, int SHIFT>
 void context(
   int8_t * __restrict pS,
   int8_t * __restrict pV,
   int8_t * __restrict pC
 ) {
-  using MMUL = aie::mmul<m, m, n, int8, int16>; // 4x8x8 -> 4x8
-  using VA   = aie::vector<int8,  MMUL::size_A>; // 4x8 (int8)
-  using VB   = aie::vector<int16, MMUL::size_B>; // 8x8 (int16)
+  using MMUL = aie::mmul<m, m, n, int8, int16>; // 4x4x8 -> 4x8
+  using VA   = aie::vector<int8,  MMUL::size_A>; // 4x4 (int8)
+  using VB   = aie::vector<int16, MMUL::size_B>; // 4x8 (int16)
   using VC   = aie::vector<int16, MMUL::size_C>; // 4x8 (int16)
 
-  using VBin = aie::vector<int8, MMUL::size_B>; // 8x8 (int8)
+  using VBin = aie::vector<int8, MMUL::size_B>; // 4x8 (int8)
   using VCout = aie::vector<int8, MMUL::size_C>; // 4x8 (int8)
 
   const int8_t* ptrS = pS;
