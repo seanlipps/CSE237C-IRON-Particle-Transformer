@@ -13,9 +13,14 @@ from aie.iron.controlflow import range_
 from aie.helpers.taplib import TensorAccessPattern, TensorTiler2D
 from aie.utils.config import cxx_header_path
 
-# score 
+
+# JIT decorator for IRON
+# Decorator to compile an IRON kernel into a binary to run on the NPU.
+# Parameters:
+#     - is_placed (bool): Whether the kernel is using explicit or deferred placement API. Defaults to True.
+#     - use_cache (bool): Use cached MLIR module if available. Defaults to True.
 @iron.jit(is_placed=False)
-def score_ly(input0, input1, output):
+def resadd_ly(input0, input1, output):
     N = input0.shape[0]  # Tensor size
     N_out = output.shape[0]
     element_type = output.dtype
@@ -27,17 +32,20 @@ def score_ly(input0, input1, output):
     in_ty = np.ndarray[(N,), np.dtype[element_type]]
     out_ty = np.ndarray[(N_out,), np.dtype[element_type]]
 
-    of_x = ObjectFifo(in_ty, depth=1, name="x")
-    of_y = ObjectFifo(in_ty, depth=1, name="y")
-    of_z = ObjectFifo(out_ty, depth=1, name="z")
+    of_x = ObjectFifo(in_ty, name="x")
+    of_y = ObjectFifo(in_ty, name="y")
+    of_z = ObjectFifo(out_ty, name="z")
 
     # --------------------------------------------------------------------------
     # Task each core will run
     # --------------------------------------------------------------------------
 
-    score_ly_kernel = ExternalFunction(
-        "score_kernel",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/score_layer.cc"),
+    # The kernel acquires input tensors X and Y, and output tensor Z, performs the
+    # SAXPY operation on X and Y, and writes the result in Z.
+
+    resadd_ly_kernel = ExternalFunction(
+        "f0",
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/test_2_layer_0.cc"),
         arg_types=[in_ty, in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
@@ -45,17 +53,17 @@ def score_ly(input0, input1, output):
         ],
     )
 
-    def core_body(of_x, of_y, of_z, score_ly_kernel):
+    def core_body(of_x, of_y, of_z, resadd_ly_kernel):
         elem_x = of_x.acquire(1)
         elem_y = of_y.acquire(1)
         elem_z = of_z.acquire(1)
-        score_ly_kernel(elem_x, elem_y, elem_z)
+        resadd_ly_kernel(elem_x, elem_y, elem_z)
         of_x.release(1)
         of_y.release(1)
         of_z.release(1)
 
     worker = Worker(
-        core_body, fn_args=[of_x.cons(), of_y.cons(), of_z.prod(), score_ly_kernel]
+        core_body, fn_args=[of_x.cons(), of_y.cons(), of_z.prod(), resadd_ly_kernel]
     )
 
     # --------------------------------------------------------------------------
@@ -80,25 +88,34 @@ def score_ly(input0, input1, output):
 def main():
     element_type = np.int8
     
-    inp = np.loadtxt("./score_data/input.txt", dtype=np.int8)
-    ref = np.loadtxt("./data/a1_golden.txt", dtype=np.int8).flatten()
+    inp0 = np.loadtxt("./iron_kernels/test_data/test_2_input0.txt", dtype=np.int8)
+    inp1 = np.loadtxt("./iron_kernels/test_data/test_2_input1.txt", dtype=np.int8)
+    ref = np.loadtxt("./iron_kernels/test_data/test_2_out_ref.txt", dtype=np.int8).flatten()
 
     INPUT_ROWS = 160
-    INPUT_COLS = 16
+    INPUT_COLS = 8
+    OUTPUT_SIZE = 160 * 8
 
-    inp_mat = inp.reshape(INPUT_ROWS, INPUT_COLS)
-    inp_tiled = tile_matrix(inp_mat, 4, 8)  # flattened tiled input
+    if inp0.size != INPUT_ROWS * INPUT_COLS:
+        raise ValueError(f"input0 size {inp.size} != {INPUT_ROWS*INPUT_COLS}")
+    if inp1.size != INPUT_ROWS * INPUT_COLS:
+        raise ValueError(f"input1 size {inp.size} != {INPUT_ROWS*INPUT_COLS}")
 
-    # Convert/set Iron tensors for kernel input
-    inp_tensor0 = iron.tensor(inp_tiled, dtype=np.int8, device="npu")
-    inp_tensor1 = iron.tensor(inp_tiled, dtype=np.int8, device="npu")
-    score_output = iron.zeros(160*160, dtype=element_type, device="npu")
+    inp0_mat = inp0.reshape(INPUT_ROWS, INPUT_COLS)
+    inp0_tiled = tile_matrix(inp0_mat, 4, 8)  # flattened tiled input
+    inp1_mat = inp1.reshape(INPUT_ROWS, INPUT_COLS)
+    inp1_tiled = tile_matrix(inp1_mat, 4, 8)  # flattened tiled input
 
-    # Insantiate AIE Kernel           
-    score_ly(inp_tensor0, inp_tensor1, score_output) # 160*16 @ 160*16^T = 160*16 @ 16*160 = 160*160
+    # Convert/set Iron tensors for kernel input and output
+    inp0_tensor = iron.tensor(inp0_tiled, dtype=np.int8, device="npu")
+    inp1_tensor = iron.tensor(inp1_tiled, dtype=np.int8, device="npu")
+    output = iron.zeros(OUTPUT_SIZE, dtype=element_type, device="npu")
+
+    # Insantiate AIE Kernel
+    resadd_ly(inp0_tensor, inp1_tensor, output)
+
+    out_np = np.array(output, dtype=np.int8)
     
-    out_np = np.array(score_output, dtype=np.int8)
-
     errors = 0
     for i, (a, r) in enumerate(zip(out_np, ref)):
         if a != r:

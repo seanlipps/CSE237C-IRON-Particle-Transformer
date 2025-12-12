@@ -1,18 +1,15 @@
-
-# from ml_dtypes import bfloat16
 import numpy as np
 import sys
 import os
 from utils.tiling import tile_matrix
 
 import aie.iron as iron
-from aie.iron import ExternalFunction, jit
+from aie.iron import ExternalFunction
 from aie.iron import Kernel, ObjectFifo, Program, Runtime, Worker
 from aie.iron.placers import SequentialPlacer
 from aie.iron.controlflow import range_
 from aie.helpers.taplib import TensorAccessPattern, TensorTiler2D
 from aie.utils.config import cxx_header_path
-
 
 # JIT decorator for IRON
 # Decorator to compile an IRON kernel into a binary to run on the NPU.
@@ -45,7 +42,7 @@ def dense_q(input0, output):
 
     dense_ly_kernel = ExternalFunction(
         "dense_kernel",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_q_head0.cc"),
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/test_4_layer_1_q_head0.cc"),
         arg_types=[in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
@@ -106,7 +103,7 @@ def dense_k(input0, output):
 
     dense_ly_kernel = ExternalFunction(
         "dense_kernel",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_k_head0.cc"),
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/test_4_layer_1_k_head0.cc"),
         arg_types=[in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
@@ -167,7 +164,7 @@ def dense_v(input0, output):
 
     dense_ly_kernel = ExternalFunction(
         "dense_kernel",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_v_head0.cc"),
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/test_4_layer_1_v_head0.cc"),
         arg_types=[in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
@@ -232,7 +229,7 @@ def score_ly(input0, input1, output):
 
     score_ly_kernel = ExternalFunction(
         "score_kernel",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_scores_head0.cc"),
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/test_4_layer_1_scores_head0.cc"),
         arg_types=[in_tx, in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
@@ -298,7 +295,7 @@ def context_ly(input0, input1, output):
 
     context_ly_kernel = ExternalFunction(
         "context_kernel",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_context_head0.cc"),
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/test_4_layer_1_context_head0.cc"),
         arg_types=[in_tx, in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
@@ -365,7 +362,7 @@ def output_ly(input0, output):
 
     output_ly_kernel = ExternalFunction(
         "output_kernel",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_out.cc"),
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/test_4_layer_1_out.cc"),
         arg_types=[in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
@@ -406,8 +403,8 @@ def output_ly(input0, output):
 def main():
     element_type = np.int8
     
-    inp = np.loadtxt("./data/a0_golden.txt", dtype=np.int8).flatten()
-    ref = np.loadtxt("./data/a1_golden.txt", dtype=np.int8).flatten()
+    inp = np.loadtxt("./iron_kernels/test_data/test_4_a0_golden.txt", dtype=np.int8).flatten()
+    ref = np.loadtxt("./iron_kernels/test_data/test_4_a1_golden.txt", dtype=np.int8).flatten()
 
     INPUT_ROWS = 40
     ff_dim = 64

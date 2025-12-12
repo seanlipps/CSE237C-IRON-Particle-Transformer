@@ -1,4 +1,3 @@
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,10 +10,10 @@ int8_t * __restrict pA,
 int8_t * __restrict pC,
 const int8_t * matB
 ) {
-    using MMUL = aie::mmul<m, k, n, int8, int8>;
-    using VA   = aie::vector<int8, MMUL::size_A>;
-    using VB   = aie::vector<int8, MMUL::size_B>;
-    using VC   = aie::vector<int8, MMUL::size_C>;
+    using MMUL = aie::mmul<m, k, n, int8, int8>; // 4x8x8
+    using VA   = aie::vector<int8, MMUL::size_A>; // 4x8
+    using VB   = aie::vector<int8, MMUL::size_B>; // 8x8
+    using VC   = aie::vector<int8, MMUL::size_C>; // 4x8
     
     const int8_t* __restrict Bbase = matB;
     const unsigned strideB_perK  = MMUL::size_B * Tn;
@@ -47,8 +46,9 @@ const int8_t * matB
 }
 
 
-// (Q @ K^T):  (T, d_model) @ (T, d_model)^T -> (T, T)
-// m=4, k=8, n=8, T=160, d_model=64, Tm(rows)=160/m=40, Tn(columns)=64/n=8
+// (Q @ K^T):  (T, head_dim) @ (T, head_dim)^T -> (T, T)
+// 160*16 @ 160*16^T = 160*160
+// m=4, k=8, n=8, T=160, d_model=64, head_dim = 64/4 = 16, Tm(rows)=160/m=40, Tk = head_dim/k = 16/8 = 2, Tn (columns)= head_dim/k = 16/8 = 2
 template <int m, int k, int n, int Tm, int Tk, int Tn, int d_model, int T, int SHIFT_S>
 void scores(
   int8_t * __restrict pQ,
@@ -118,9 +118,9 @@ void scores(
 }
 
 
-// (scores @ V)  (T,T) @ (T,d_model) -> (T,d_model)
-// Tm = 160/4 = 40, Tk = 160/4 = 40, Tn = 64/8 = 8
-// 160 x 160 x 64 tiled with 4 x 4 x 8
+// (scores @ V)  (T,T) @ (T,head_dim) -> (T,head_dim)
+// Tm = 160/4 = 40, Tk = 160/8 = 20, Tn = 16/8 = 2
+// 160 x 160 x 16 tiled with 4 x 8 x 8
 template <int m, int k, int n, int Tm, int Tk, int Tn, int SHIFT>
 void context(
   int8_t * __restrict pS,

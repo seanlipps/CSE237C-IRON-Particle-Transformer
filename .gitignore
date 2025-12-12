@@ -16,6 +16,7 @@ data
 aie/include.h
 aie/weights.h
 aie/layer_graph.h 
+aie/graph.cpp
 aie/model.cc 
 aie/model.h
 aie/layer*
@@ -26,3 +27,8 @@ golden_debug.ipynb
 *__pycache__
 pl_sample_count**
 .ipynb_checkpoints/
+output_output.txt
+scores_output.txt
+q_output.txt
+k_output.txt
+

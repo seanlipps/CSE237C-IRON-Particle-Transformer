@@ -142,81 +142,115 @@ class MHALayer(AIELayer):
             pass
 
         for h in range(self.num_heads):
-            with open(f"aie/layer_{self.idx}_q_head{h}.cc", "w") as fq:
+            print("self.num_heads\n")
+            with open(f"iron_kernels/layer_{self.idx}_q_head{h}.cc", "w") as fq:
+                fq.write('#include "iron_kernels.h"\n\n')
+                
+                fq.write('extern "C" {\n')
                 fq.write('#include <cstdint>\n')
-                fq.write(f'__attribute__((section(".data"))) alignas(32) int8_t k_p [{self.Wq_heads[h].size}] = {{ ')
+                fq.write(f'int8_t k_p [{self.Wq_heads[h].size}] = {{ ')
                 fq.write(', '.join(str(int(x)) for x in self.Wq_heads[h]))
                 fq.write(' };\n\n')
-                fq.write('#include "kernels.h"\n\n')
-                fq.write(f'void q{self.idx}_head{h}(input_stream_int8 * __restrict x, output_stream_int8 * __restrict a){{ ')
-                fq.write(f'dense<{self.m}, {self.k}, {self.n}, {self.T//self.m}, {self.d_model//self.k}, {self.head_dim//self.n}, {self.shift_q}, false>')
-                fq.write('(x, a, k_p);}\n')
+                
+                fq.write(f'void q{self.idx}_head{h}(int8_t * x, int8_t * a){{\n')
+                fq.write(f'    dense<{self.m}, {self.k}, {self.n}, {self.T//self.m}, {self.d_model//self.k}, {self.head_dim//self.n}, {self.shift_q}, false>')
+                fq.write('(x, a, k_p);\n')
+                fq.write('}\n')
+                fq.write('}')
 
-            with open(f"aie/layer_{self.idx}_k_head{h}.cc", "w") as fk:
+            with open(f"iron_kernels/layer_{self.idx}_k_head{h}.cc", "w") as fk:
+                fk.write('#include "iron_kernels.h"\n\n')
+                
+                fk.write('extern "C" {\n')
                 fk.write('#include <cstdint>\n')
-                fk.write(f'__attribute__((section(".data"))) alignas(32) int8_t k_p [{self.Wk_heads[h].size}] = {{ ')
+                fk.write(f'int8_t k_p [{self.Wk_heads[h].size}] = {{ ')
                 fk.write(', '.join(str(int(x)) for x in self.Wk_heads[h]))
                 fk.write(' };\n\n')
-                fk.write('#include "kernels.h"\n\n')
-                fk.write(f'void k{self.idx}_head{h}(input_stream_int8 * __restrict x, output_stream_int8 * __restrict a){{ ')
-                fk.write(f'dense<{self.m}, {self.k}, {self.n}, {self.T//self.m}, {self.d_model//self.k}, {self.head_dim//self.n}, {self.shift_k}, false>')
-                fk.write('(x, a, k_p);}\n')
+                
+                fk.write(f'void k{self.idx}_head{h}(int8_t * x, int8_t * a){{\n')
+                fk.write(f'    dense<{self.m}, {self.k}, {self.n}, {self.T//self.m}, {self.d_model//self.k}, {self.head_dim//self.n}, {self.shift_k}, false>')
+                fk.write('(x, a, k_p);\n')
+                fk.write('}\n')
+                fk.write('}')
 
-            with open(f"aie/layer_{self.idx}_v_head{h}.cc", "w") as fv:
+            with open(f"iron_kernels/layer_{self.idx}_v_head{h}.cc", "w") as fv:
+                fv.write('#include "iron_kernels.h"\n\n')
+                
+                fv.write('extern "C" {\n')
                 fv.write('#include <cstdint>\n')
-                fv.write(f'__attribute__((section(".data"))) alignas(32) int8_t k_p [{self.Wv_heads[h].size}] = {{ ')
+                fv.write(f'int8_t k_p [{self.Wv_heads[h].size}] = {{ ')
                 fv.write(', '.join(str(int(x)) for x in self.Wv_heads[h]))
                 fv.write(' };\n\n')
-                fv.write('#include "kernels.h"\n\n')
-                fv.write(f'void v{self.idx}_head{h}(input_stream_int8 * __restrict x, output_stream_int8 * __restrict a){{ ')
+                
+                fv.write(f'void v{self.idx}_head{h}(int8_t * x, int8_t * a){{\n')
                 fv.write(f'dense<{self.m}, {self.k}, {self.n}, {self.T//self.m}, {self.d_model//self.k}, {self.head_dim//self.n}, {self.shift_v}, false>')
-                fv.write('(x, a, k_p);}\n')
+                fv.write('(x, a, k_p);\n')
+                fv.write('}\n')
+                fv.write('}')
 
-            with open(f"aie/layer_{self.idx}_scores_head{h}.cc", "w") as fs:
-                fs.write('#include "kernels.h"\n\n')
-                fs.write(f'void scores{self.idx}_head{h}(input_stream_int8 * __restrict q_head, input_stream_int8 * __restrict k_head, output_stream_int8 * __restrict o_head){{ ')
-                fs.write(f'scores<{self.m}, {self.k}, {self.n}, {self.T//self.m}, {self.head_dim//self.k}, {self.head_dim//self.n}, {self.head_dim}, {self.T}, {self.shift_s[h]}>')
-                fs.write('(q_head, k_head, o_head);}\n')
+            with open(f"iron_kernels/layer_{self.idx}_scores_head{h}.cc", "w") as fs:
+                fs.write('#include "iron_kernels.h"\n\n')
+                fs.write('extern "C" {\n')
+                fs.write(f'void scores{self.idx}_head{h}(int8_t * q_head, int8_t * k_head, int8_t * o_head){{\n')
+                fs.write(f'    scores<{self.m}, {self.k}, {self.n}, {self.T//self.m}, {self.head_dim//self.k}, {self.head_dim//self.n}, {self.head_dim}, {self.T}, {self.shift_s[h]}>')
+                fs.write('(q_head, k_head, o_head);\n')
+                fs.write('}\n')
+                fs.write('}')
 
-            with open(f"aie/layer_{self.idx}_context_head{h}.cc", "w") as fc:
-                fc.write('#include "kernels.h"\n\n')
-                fc.write(f'void context{self.idx}_head{h}(input_stream_int8 * __restrict x, input_stream_int8 * __restrict v, output_stream_int8 * __restrict a){{ ')
-                fc.write(f'context<{self.m}, {self.k}, {self.n}, {self.T//self.m}, {self.T//self.k}, {self.head_dim//self.n}, {self.shift_c[h]}>')
-                fc.write('(x, v, a);}\n')
+            with open(f"iron_kernels/layer_{self.idx}_context_head{h}.cc", "w") as fc:
+                fc.write('#include "iron_kernels.h"\n\n')
+
+                fc.write('extern "C" {\n')
+                fc.write(f'void context{self.idx}_head{h}(int8_t * x, int8_t * v, int8_t * a){{\n')
+                fc.write(f'    context<{self.m}, {self.k}, {self.n}, {self.T//self.m}, {self.T//self.k}, {self.head_dim//self.n}, {self.shift_c[h]}>')
+                fc.write('(x, v, a);\n')
+                fc.write('}\n')
+                fc.write('}')
 
         # Generate concat and output kernels
         if self.num_heads == 4:
-            with open(f"aie/layer_{self.idx}_concat.cc", "w") as fc:
-                fc.write('#include "kernels.h"\n\n')
+            with open(f"iron_kernels/layer_{self.idx}_concat.cc", "w") as fc:
+                fc.write('#include "iron_kernels.h"\n\n')
+
+                fc.write('extern "C" {\n')
                 fc.write(f'// Concat head 0 and head 1: ({self.T},{self.head_dim}) + ({self.T},{self.head_dim}) -> ({self.T},{self.head_dim*2})\n')
-                fc.write(f'void concat{self.idx}_0(input_stream_int8 * __restrict sA, input_stream_int8 * __restrict sB, output_stream_int8 * __restrict sC){{\n')
-                fc.write(f'concat<{self.m}, {self.n}, {self.T//self.m}, {self.head_dim//self.n}>(sA, sB, sC);\n')
+                fc.write(f'void concat{self.idx}_0(int8_t * sA, int8_t * sB, int8_t * sC){{\n')
+                fc.write(f'    concat<{self.m}, {self.n}, {self.T//self.m}, {self.head_dim//self.n}>(sA, sB, sC);\n')
                 fc.write('}\n\n')
                 fc.write(f'// Concat head 2 and head 3: ({self.T},{self.head_dim}) + ({self.T},{self.head_dim}) -> ({self.T},{self.head_dim*2})\n')
-                fc.write(f'void concat{self.idx}_1(input_stream_int8 * __restrict sA, input_stream_int8 * __restrict sB, output_stream_int8 * __restrict sC){{\n')
-                fc.write(f'concat<{self.m}, {self.n}, {self.T//self.m}, {self.head_dim//self.n}>(sA, sB, sC);\n')
+                fc.write(f'void concat{self.idx}_1(int8_t * sA, int8_t * sB, int8_t * sC){{\n')
+                fc.write(f'    concat<{self.m}, {self.n}, {self.T//self.m}, {self.head_dim//self.n}>(sA, sB, sC);\n')
                 fc.write('}\n')
+                fc.write('}')
 
-            with open(f"aie/layer_{self.idx}_out.cc", "w") as fo:
+            with open(f"iron_kernels/layer_{self.idx}_out.cc", "w") as fo:
+                fo.write('#include "iron_kernels.h"\n\n')
+
+                fo.write('extern "C" {\n')
                 fo.write('#include <cstdint>\n')
-                fo.write(f'__attribute__((section(".data"))) alignas(32) int8_t k_p [{self.Wo_tiled.size}] = {{ ')
+                fo.write(f'int8_t k_p [{self.Wo_tiled.size}] = {{ ')
                 fo.write(', '.join(str(int(x)) for x in self.Wo_tiled))
                 fo.write(' };\n\n')
-                fo.write('#include "kernels.h"\n\n')
-                fo.write(f'void out{self.idx}(input_stream_int8 * __restrict sA, input_stream_int8 * __restrict sB, output_stream_int8 * __restrict a){{')
-                fo.write(f'output<{self.m}, {self.k}, {self.n}, {self.T//self.m}, {self.d_model//self.k}, {self.d_model//self.n}, {self.shift_o}>')
-                fo.write('(sA, sB, a, k_p);}\n')
+                fo.write(f'void out{self.idx}(int8_t * sA, int8_t * sB, int8_t * a){{\n')
+                fo.write(f'    output<{self.m}, {self.k}, {self.n}, {self.T//self.m}, {self.d_model//self.k}, {self.d_model//self.n}, {self.shift_o}>')
+                fo.write('(sA, sB, a, k_p);\n')
+                fo.write('}\n')
+                fo.write('}')
 
         elif self.num_heads == 1:
-            with open(f"aie/layer_{self.idx}_out.cc", "w") as fo:
+            with open(f"iron_kernels/layer_{self.idx}_out.cc", "w") as fo:
+                fc.write('#include "iron_kernels.h"\n\n')
+
+                fo.write('extern "C" {\n')
                 fo.write('#include <cstdint>\n')
-                fo.write(f'__attribute__((section(".data"))) alignas(32) int8_t k_p [{self.Wo_tiled.size}] = {{ ')
+                fo.write(f'int8_t k_p [{self.Wo_tiled.size}] = {{ ')
                 fo.write(', '.join(str(int(x)) for x in self.Wo_tiled))
                 fo.write(' };\n\n')
-                fo.write('#include "kernels.h"\n\n')
-                fo.write(f'void out{self.idx}(input_stream_int8 * __restrict x, output_stream_int8 * __restrict a){{ ')
-                fo.write(f'dense<{self.m}, {self.k}, {self.n}, {self.T//self.m}, {self.d_model//self.k}, {self.head_dim//self.n}, {self.shift_o}, false>')
-                fo.write('(x, a, k_p);}\n')
+                fo.write(f'void out{self.idx}(int8_t * x, int8_t * a){{\n')
+                fo.write(f'    dense<{self.m}, {self.k}, {self.n}, {self.T//self.m}, {self.d_model//self.k}, {self.head_dim//self.n}, {self.shift_o}, false>')
+                fo.write('(x, a, k_p);\n')
+                fo.write('}\n')
+                fo.write('}')
 
         self._generate_include_code()
 
