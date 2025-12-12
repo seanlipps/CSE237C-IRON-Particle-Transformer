@@ -113,7 +113,7 @@ def particle_transformer(input0, output):
     )
 
     qkv_kernels = [ExternalFunction(f"qkv1_head{i}",
-                            source_file = os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_1_qkv_head{i}.cc"),
+                            source_file = os.path.join(os.path.dirname(__file__), f"iron_kernels/test_5_layer_1_qkv_head{i}.cc"),
                             arg_types=[mha_in_ty, qkv_ty, qkv_ty, qkv_ty], 
                             include_dirs=[cxx_header_path(), os.path.join(os.path.dirname(__file__), "iron_kernels")
                             ],
