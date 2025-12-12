@@ -12,232 +12,350 @@ from aie.helpers.taplib import TensorAccessPattern, TensorTiler2D
 from aie.utils.config import cxx_header_path
 from aie.dialects.aie import *  # primary mlir-aie dialect definitions
 
-@iron.jit(is_placed=False)
-def particle_transformer(input0, output):
-    N = input0.shape[0]   # 160 * 8
-    N_out = output.shape[0] # 160 * 64
-    element_type = output.dtype
 
-    # Tensor types
-    in_ty = np.ndarray[(N,), np.dtype[element_type]]
-    mha_in_ty = np.ndarray[(160*64,), np.dtype[element_type]]
-    qkv_ty = np.ndarray[(160*16,), np.dtype[element_type]]
-    score_ty = np.ndarray[(160*160,), np.dtype[element_type]]
-    context_ty = np.ndarray[(160*16,), np.dtype[element_type]]
-    concat_ty = np.ndarray[(160*32,), np.dtype[element_type]]
-    out_ty = np.ndarray[(N_out,), np.dtype[element_type]]
+########################################
+# Dense 
+# compute dense for mha layer input
+# Compute Tile Utilization: 1/16
+def make_dense_ly(layer_num: int):
+    @iron.jit(is_placed=False)
+    def dense_ly(input0, output):
+        N = input0.shape[0]
+        N_out = output.shape[0]
+        element_type = output.dtype
+
+        # Tensor types
+        in_ty = np.ndarray[(N,), np.dtype[element_type]]
+        out_ty = np.ndarray[(N_out,), np.dtype[element_type]]
+
+        # FIFOs
+        of_x = ObjectFifo(in_ty, name="x")
+        of_z = ObjectFifo(out_ty, name="z")
+
+        # External AIE kernel
+        dense_ly_kernel = ExternalFunction(
+            f"f{layer_num}",
+            source_file=os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_{layer_num}.cc"),
+            arg_types=[in_ty, out_ty],
+            include_dirs=[
+                cxx_header_path(),
+                os.path.join(os.path.dirname(__file__), "iron_kernels"),
+            ],
+        )
+
+        def core_body(of_x, of_z, dense_ly_kernel):
+            elem_x = of_x.acquire(1)
+            elem_z = of_z.acquire(1)
+            dense_ly_kernel(elem_x, elem_z)
+            of_x.release(1)
+            of_z.release(1)
+
+        worker = Worker(core_body, fn_args=[of_x.cons(), of_z.prod(), dense_ly_kernel])
+
+        # Runtime and data movement
+        rt = Runtime()
+        with rt.sequence(in_ty, out_ty) as (a_x, c_z):
+            rt.start(worker)
+            rt.fill(of_x.prod(), a_x)
+            rt.drain(of_z.cons(), c_z, wait=True)
+
+        # Program + placement
+        my_program = Program(iron.get_current_device(), rt)
+        return my_program.resolve_program(SequentialPlacer())
+
+    return dense_ly
+
+##############################################################
+# MHA part 1 (single head)
+# takes in dense output
+# compute q, k, v 
+# compute score
+# compute context
+# Compute Tile Utilization: 5/16
+def make_mha_p1(layer_num: int, head_num: int):
+    @iron.jit(is_placed=False)
+    def mha_p1(input0, output):
+        N = input0.shape[0]   # 160 * 64
+        N_out = output.shape[0] # 160 * 16
+        element_type = output.dtype
+    
+        # Tensor types
+        in_ty = np.ndarray[(N,), np.dtype[element_type]]
+        qkv_ty = np.ndarray[(160*16,), np.dtype[element_type]]
+        score_ty = np.ndarray[(160*160,), np.dtype[element_type]]
+        context_ty = np.ndarray[(160*16,), np.dtype[element_type]]
+    
+        # FIFOs
+        of_in = ObjectFifo(in_ty, name="in", depth=1)      
+        of_q_out = ObjectFifo(qkv_ty, name = "q_out", depth=1)
+        of_k_out = ObjectFifo(qkv_ty, name = "k_out", depth=1) 
+        of_v_out = ObjectFifo(qkv_ty, name = "v_out", depth=1)
+        of_score = ObjectFifo(score_ty, name = "score_out", depth=1) 
+        of_context = ObjectFifo(context_ty, name = "context_out", depth=1) 
+    
+        # Kernels
+        q_kernel = ExternalFunction(
+            f"q{layer_num}_head{head_num}",
+            source_file=os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_{layer_num}_q_head{head_num}.cc"),
+            arg_types=[in_ty, qkv_ty],
+            include_dirs=[
+                cxx_header_path(),
+                os.path.join(os.path.dirname(__file__), "iron_kernels")
+            ],
+        )
+        
+        k_kernel = ExternalFunction(
+            f"k{layer_num}_head{head_num}",
+            source_file=os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_{layer_num}_k_head{head_num}.cc"),
+            arg_types=[in_ty, qkv_ty],
+            include_dirs=[
+                cxx_header_path(),
+                os.path.join(os.path.dirname(__file__), "iron_kernels")
+            ],
+        )
+
+        v_kernel = ExternalFunction(
+            f"v{layer_num}_head{head_num}",
+            source_file=os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_{layer_num}_v_head{head_num}.cc"),
+            arg_types=[in_ty, qkv_ty],
+            include_dirs=[
+                cxx_header_path(),
+                os.path.join(os.path.dirname(__file__), "iron_kernels")
+            ],
+        )
+        
+        score_kernel = ExternalFunction(
+            f"scores{layer_num}_head{head_num}",
+            source_file=os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_{layer_num}_scores_head{head_num}.cc"),
+            arg_types=[qkv_ty, qkv_ty, score_ty],
+            include_dirs=[
+                cxx_header_path(),
+                os.path.join(os.path.dirname(__file__), "iron_kernels")
+            ],
+        )
+
+        context_kernel = ExternalFunction(
+            f"context{layer_num}_head{head_num}",
+            source_file=os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_{layer_num}_context_head{head_num}.cc"),
+            arg_types=[score_ty, qkv_ty, context_ty],
+            include_dirs=[
+                cxx_header_path(),
+                os.path.join(os.path.dirname(__file__), "iron_kernels")
+            ],
+        )
+        
+        # task for one input, one output
+        def core_body_dense (of_in, of_out, kernel):
+            elem_in = of_in.acquire(1)
+            elem_out = of_out.acquire(1)
+            kernel(elem_in, elem_out)
+            of_in.release(1)
+            of_out.release(1)
+    
+        # task for two inputs, one output
+        def core_body_in2 (of_in0, of_in1, of_out, kernel):
+            elem_in0 = of_in0.acquire(1)
+            elem_in1 = of_in1.acquire(1)
+            elem_out = of_out.acquire(1)
+            kernel(elem_in0, elem_in1, elem_out)
+            of_in0.release(1)
+            of_in1.release(1)
+            of_out.release(1)
+    
+        workers = []
+        workers.append(Worker(core_body_dense, fn_args=[of_in.cons(), of_q_out.prod(), q_kernel]))
+        workers.append(Worker(core_body_dense, fn_args=[of_in.cons(), of_k_out.prod(), k_kernel]))
+        workers.append(Worker(core_body_dense, fn_args=[of_in.cons(), of_v_out.prod(), v_kernel]))
+        workers.append(Worker(core_body_in2, fn_args=[of_q_out.cons(), of_k_out.cons(), of_score.prod(), score_kernel]))
+        workers.append(Worker(core_body_in2, fn_args=[of_score.cons(), of_v_out.cons(), of_context.prod(), context_kernel]))
+            
+        # Runtime and data movement
+        rt = Runtime()
+        with rt.sequence(in_ty, context_ty) as (a_x, c_z):
+            rt.start(*workers)
+            rt.fill(of_in.prod(), a_x)
+            rt.drain(of_context.cons(), c_z, wait=True)
+    
+        # Program + placement
+        my_program = Program(iron.get_current_device(), rt)
+        return my_program.resolve_program(SequentialPlacer())
+
+    return mha_p1
+
+
+##############################################################
+# MHA part 2
+# takes in context outputs from 4 heads
+# concat head0,1 and head2,3
+# output
+# Compute Tile Utilization: 3/16
+def make_mha_p2(layer_num: int):
+    @iron.jit(is_placed=False)
+    def mha_p2(input0, input1, input2, input3, output):
+        N = input0.shape[0]   # 160 * 16
+        N_out = output.shape[0] # 160 * 64
+        element_type = output.dtype
+    
+        # Tensor types
+        in_ty = np.ndarray[(N,), np.dtype[element_type]]
+        concat_ty = np.ndarray[(160*32,), np.dtype[element_type]]
+        out_ty = np.ndarray[(N_out,), np.dtype[element_type]]
+    
+        # FIFOs
+        of_in = [ObjectFifo(in_ty, name=f"in_{i}", depth=1) for i in range(4)]
+        of_concat = [ObjectFifo(concat_ty, name = f"concat_{i}", depth=1) for i in range(2)]
+        of_out = ObjectFifo(out_ty, name = "out", depth=1)
+    
+        # Kernels    
+        concat_kernels = [ExternalFunction(f"concat{layer_num}_{i}",
+                                source_file = os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_{layer_num}_concat.cc"),
+                                arg_types=[in_ty, in_ty, concat_ty], 
+                                include_dirs=[cxx_header_path(), os.path.join(os.path.dirname(__file__), "iron_kernels")
+                                ],
+                       ) for i in range (2)]
+    
+        out_kernel = ExternalFunction(
+            f"out{layer_num}",
+            source_file=os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_{layer_num}_out.cc"),
+            arg_types=[concat_ty, concat_ty, out_ty],
+            include_dirs=[
+                cxx_header_path(),
+                os.path.join(os.path.dirname(__file__), "iron_kernels")
+            ],
+        )
+    
+        # task for two inputs, one output
+        def core_body_in2 (of_in0, of_in1, of_out, kernel):
+            elem_in0 = of_in0.acquire(1)
+            elem_in1 = of_in1.acquire(1)
+            elem_out = of_out.acquire(1)
+            kernel(elem_in0, elem_in1, elem_out)
+            of_in0.release(1)
+            of_in1.release(1)
+            of_out.release(1)
 
     
-    # Tile layout (row, col):
-    #
-    #       col=0         col=1             col=2             col=3
-    #      -------------------------------------------------------------
-    # r=5 | context[0]|   concat[0]  |   concat[1]  |    out      |
-    # r=4 | score[0]  |  context[1]  |   context[2] |  context[3] |
-    # r=3 | qkv[0]    |   score[1]   |    score[2]  |   score[3]  |
-    # r=2 | dense     |    qkv[1]    |    qkv[2]    |    qkv[3]   |
-    # r=1 |   mem1    |      mem2    |     mem3     |    mem4     |
-    # r=0 |   shim1   |     shim2    |     shim3    |   shim4     |
-
-    # shim1 = (0,0)     (col, row)
-    # mem1 = (0,1) 
-
-    ################### tile placement ####################    
-    # shim_tile  = tile(0,0)
-    # dense_tile = tile(0,2)
+        workers = []  
+        workers.append(Worker(core_body_in2, fn_args=[of_in[0].cons(), of_in[1].cons(), of_concat[0].prod(), concat_kernels[0]]))
+        workers.append(Worker(core_body_in2, fn_args=[of_in[2].cons(), of_in[3].cons(), of_concat[1].prod(), concat_kernels[1]]))
+        workers.append(Worker(core_body_in2, fn_args=[of_concat[0].cons(), of_concat[1].cons(), of_out.prod(), out_kernel]))
     
-    # # QKV tiles, one per head
-    # qkv_tile = [
-    #     tile(0, 3),  # qkv[0]
-    #     tile(1, 2),  # qkv[1]
-    #     tile(2, 2),  # qkv[2]
-    #     tile(3, 2),  # qkv[3]
-    # ]
+        
+        # Runtime and data movement
+        rt = Runtime()
+        with rt.sequence(in_ty, in_ty, in_ty, in_ty, out_ty) as (a0_x, a1_x, a2_x, a3_x, c_z):
+            rt.start(*workers)
+            rt.fill(of_in[0].prod(), a0_x)
+            rt.fill(of_in[1].prod(), a1_x)
+            rt.fill(of_in[2].prod(), a2_x)
+            rt.fill(of_in[3].prod(), a3_x)
+            rt.drain(of_out.cons(), c_z, wait=True)
     
-    # # Score tiles
-    # score_tile = [
-    #     tile(0, 4),  # score[0]
-    #     tile(1, 3),  # score[1]
-    #     tile(2, 3),  # score[2]
-    #     tile(3, 3),  # score[3]
-    # ]
+        # Program + placement
+        my_program = Program(iron.get_current_device(), rt)
+        return my_program.resolve_program(SequentialPlacer())
+    return mha_p2
     
-    # # Context tiles
-    # context_tile = [
-    #     tile(0, 5),  # context[0]
-    #     tile(1, 4),  # context[1]
-    #     tile(2, 4),  # context[2]
-    #     tile(3, 4),  # context[3]
-    # ]
+##############################################################
+# Resadd + dense + dense + resadd
+# takes in dense output and mha output
+# Compute Tile Utilization: 4/16
+def make_resadd_ly(layer_num: int):
+    @iron.jit(is_placed=False)
+    def resadd_ly(input0, input1, output):
+        N = input0.shape[0]  # Tensor size
+        N_out = output.shape[0]
+        element_type = output.dtype
+        
+        in_ty = np.ndarray[(N,), np.dtype[element_type]]
+        out_ty = np.ndarray[(N_out,), np.dtype[element_type]]
     
-    # # Concat tiles
-    # concat_tile = [
-    #     tile(1, 5),  # concat[0]
-    #     tile(2, 5),  # concat[1]
-    # ]
+        of_in0 = ObjectFifo(in_ty, name="in0")
+        of_in1 = ObjectFifo(in_ty, name="in1")
+        of_res = ObjectFifo(in_ty, name="res")
+        of_ffa = ObjectFifo(in_ty, name="ffa")
+        of_ffb = ObjectFifo(in_ty, name="ffb")
+        of_out = ObjectFifo(out_ty, name="out")
+
+        resadd_ly_kernel0 = ExternalFunction(
+            f"f{layer_num}",
+            source_file=os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_{layer_num}.cc"),
+            arg_types=[in_ty, in_ty, out_ty],
+            include_dirs=[
+                cxx_header_path(),
+                os.path.join(os.path.dirname(__file__), "iron_kernels")
+            ],
+        )
+
+        dense_ly_kernel0 = ExternalFunction(
+            f"f{layer_num+1}",
+            source_file=os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_{layer_num+1}.cc"),
+            arg_types=[in_ty, out_ty],
+            include_dirs=[
+                cxx_header_path(),
+                os.path.join(os.path.dirname(__file__), "iron_kernels"),
+            ],
+        )
+        
+        dense_ly_kernel1 = ExternalFunction(
+            f"f{layer_num+2}",
+            source_file=os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_{layer_num+2}.cc"),
+            arg_types=[in_ty, out_ty],
+            include_dirs=[
+                cxx_header_path(),
+                os.path.join(os.path.dirname(__file__), "iron_kernels"),
+            ],
+        )
+
+        resadd_ly_kernel1 = ExternalFunction(
+            f"f{layer_num+3}",
+            source_file=os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_{layer_num+3}.cc"),
+            arg_types=[in_ty, in_ty, out_ty],
+            include_dirs=[
+                cxx_header_path(),
+                os.path.join(os.path.dirname(__file__), "iron_kernels")
+            ],
+        )
+
+        def core_body_dense (of_in, of_out, kernel):
+            elem_in = of_in.acquire(1)
+            elem_out = of_out.acquire(1)
+            kernel(elem_in, elem_out)
+            of_in.release(1)
+            of_out.release(1)
+        
+        def core_body_in2(of_x, of_y, of_z, kernel):
+            elem_x = of_x.acquire(1)
+            elem_y = of_y.acquire(1)
+            elem_z = of_z.acquire(1)
+            kernel(elem_x, elem_y, elem_z)
+            of_x.release(1)
+            of_y.release(1)
+            of_z.release(1)
+
+        workers = []
+        workers.append(Worker(core_body_in2, fn_args=[of_in0.cons(), of_in1.cons(), of_res.prod(), resadd_ly_kernel0]))
+        workers.append(Worker(core_body_dense, fn_args=[of_res.cons(), of_ffa.prod(), dense_ly_kernel0]))
+        workers.append(Worker(core_body_dense, fn_args=[of_ffa.cons(), of_ffb.prod(), dense_ly_kernel1]))
+        workers.append(Worker(core_body_in2, fn_args=[of_ffb.cons(), of_res.cons(), of_out.prod(), resadd_ly_kernel1]))
     
-    # # Out tile: out at (3,5)
-    # out_tile = tile(3, 5)
-
-
-    # FIFOs
-    of_in = ObjectFifo(in_ty, name="in", depth=1)    
-    of_mha_in = ObjectFifo(mha_in_ty, name="mha_in", depth=1)    
-    of_q_out = [ObjectFifo(qkv_ty, name = f"q_out_{i}", depth=1) for i in range(4)]
-    of_k_out = [ObjectFifo(qkv_ty, name = f"k_out_{i}", depth=1) for i in range(4)]
-    of_v_out = [ObjectFifo(qkv_ty, name = f"v_out_{i}", depth=1) for i in range(4)]
-    of_score = [ObjectFifo(score_ty, name = f"score_{i}", depth=1) for i in range(4)]
-    of_context = [ObjectFifo(context_ty, name = f"context_{i}", depth=1) for i in range(4)]
-    of_concat = [ObjectFifo(concat_ty, name = f"concat_{i}", depth=1) for i in range(2)]
-    of_out = ObjectFifo(out_ty, name = "out", depth=1)
-
-    # of_in = object_fifo("in", shim_tile, dense_tile, 1, in_ty)    
-    # of_mha_in = object_fifo("mha_in", dense_tile, qkv_tile, 1, mha_in_ty)    
-    # of_q_out = [object_fifo(f"q_out_{i}", q_tile[i], score_tile[i], 1, qkv_ty) for i in range(4)]
-    # of_k_out = [object_fifo(f"k_out_{i}", k_tile[i], score_tile[i], 1, qkv_ty) for i in range(4)]
-    # of_v_out = [object_fifo(f"v_out_{i}", v_tile[i], context_tile[i], 1, qkv_ty) for i in range(4)]
-    # of_score = [object_fifo(f"score_{i}", score_tile[i], context_tile[i], 1, score_ty) for i in range(4)]
-    # of_context = [object_fifo(f"context_{i}", context_tile[i], concat_tile[i//2], 1, context_ty) for i in range(4)]
-    # of_concat = [object_fifo(f"concat_{i}", concat_tile[i], out_tile, 1, concat_ty) for i in range(2)]
-    # of_out = object_fifo("out", out_tile, shim_tile, 1, out_ty)
-
-    # Kernels
-    dense_ly_kernel = ExternalFunction(
-        "f0",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_0.cc"),
-        arg_types=[in_ty, mha_in_ty],
-        include_dirs=[
-            cxx_header_path(),
-            os.path.join(os.path.dirname(__file__), "iron_kernels")
-        ],
-    )
-
-    qkv_kernels = [ExternalFunction(f"qkv1_head{i}",
-                            source_file = os.path.join(os.path.dirname(__file__), f"iron_kernels/test_5_layer_1_qkv_head{i}.cc"),
-                            arg_types=[mha_in_ty, qkv_ty, qkv_ty, qkv_ty], 
-                            include_dirs=[cxx_header_path(), os.path.join(os.path.dirname(__file__), "iron_kernels")
-                            ],
-                   ) for i in range (4)]
-
-    # q_kernels = [ExternalFunction(f"q1_head{i}",
-    #                         source_file = os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_1_q_head{i}.cc"),
-    #                         arg_types=[mha_in_ty, qkv_ty], 
-    #                         include_dirs=[cxx_header_path(), os.path.join(os.path.dirname(__file__), "iron_kernels")
-    #                         ],
-    #                ) for i in range (4)]
-    # k_kernels = [ExternalFunction(f"k1_head{i}",
-    #                         source_file = os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_1_k_head{i}.cc"),
-    #                         arg_types=[mha_in_ty, qkv_ty], 
-    #                         include_dirs=[cxx_header_path(), os.path.join(os.path.dirname(__file__), "iron_kernels")
-    #                         ],
-    #                ) for i in range (4)]
-    # v_kernels = [ExternalFunction(f"v1_head{i}",
-    #                         source_file = os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_1_v_head{i}.cc"),
-    #                         arg_types=[mha_in_ty, qkv_ty], 
-    #                         include_dirs=[cxx_header_path(), os.path.join(os.path.dirname(__file__), "iron_kernels")
-    #                         ],
-    #                ) for i in range (4)]
-
-    score_kernels = [ExternalFunction(f"scores1_head{i}",
-                            source_file = os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_1_scores_head{i}.cc"),
-                            arg_types=[qkv_ty, qkv_ty, score_ty], 
-                            include_dirs=[cxx_header_path(), os.path.join(os.path.dirname(__file__), "iron_kernels")
-                            ],
-                   ) for i in range (4)]
+        rt = Runtime()
+        with rt.sequence(in_ty, in_ty, out_ty) as (a_x, a_y, c_z):
+            rt.start(*workers)
+            rt.fill(of_in0.prod(), a_x)
+            rt.fill(of_in1.prod(), a_y)
+            rt.drain(of_out.cons(), c_z, wait=True)
     
-    context_kernels = [ExternalFunction(f"context1_head{i}",
-                            source_file = os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_1_context_head{i}.cc"),
-                            arg_types=[score_ty, qkv_ty, context_ty], 
-                            include_dirs=[cxx_header_path(), os.path.join(os.path.dirname(__file__), "iron_kernels")
-                            ],
-                   ) for i in range (4)]
-    
-    concat_kernels = [ExternalFunction(f"concat1_{i}",
-                            source_file = os.path.join(os.path.dirname(__file__), f"iron_kernels/layer_1_concat.cc"),
-                            arg_types=[context_ty, context_ty, concat_ty], 
-                            include_dirs=[cxx_header_path(), os.path.join(os.path.dirname(__file__), "iron_kernels")
-                            ],
-                   ) for i in range (2)]
+        my_program = Program(iron.get_current_device(), rt)
+        return my_program.resolve_program(SequentialPlacer())
+    return resadd_ly
 
-    out_kernel = ExternalFunction(
-        "out1",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_out.cc"),
-        arg_types=[concat_ty, concat_ty, out_ty],
-        include_dirs=[
-            cxx_header_path(),
-            os.path.join(os.path.dirname(__file__), "iron_kernels")
-        ],
-    )
-    
-    # task for one input, one output
-    def core_body_dense (of_in, of_out, kernel):
-        elem_in = of_in.acquire(1)
-        elem_out = of_out.acquire(1)
-        kernel(elem_in, elem_out)
-        of_in.release(1)
-        of_out.release(1)
-
-    # task for two inputs, one output
-    def core_body_in2 (of_in0, of_in1, of_out, kernel):
-        elem_in0 = of_in0.acquire(1)
-        elem_in1 = of_in1.acquire(1)
-        elem_out = of_out.acquire(1)
-        kernel(elem_in0, elem_in1, elem_out)
-        of_in0.release(1)
-        of_in1.release(1)
-        of_out.release(1)
-
-    def core_body_qkv (of_in, of_out0, of_out1, of_out2, qkv_kernel):
-        elem_in = of_in.acquire(1)
-        elem_out0 = of_out0.acquire(1)
-        elem_out1 = of_out1.acquire(1)
-        elem_out2 = of_out2.acquire(1)
-        qkv_kernel(elem_in, elem_out0, elem_out1, elem_out2)
-        of_in.release(1)
-        of_out0.release(1)
-        of_out1.release(1)
-        of_out2.release(1)
-
-    workers = []
-    workers.append(Worker(core_body_dense, fn_args=[of_in.cons(), of_mha_in.prod(), dense_ly_kernel]))
-    for i in range(4):
-        workers.append(Worker(core_body_qkv, fn_args=[of_mha_in.cons(), 
-                                                        of_q_out[i].prod(), of_k_out[i].prod(), of_v_out[i].prod(),
-                                                        qkv_kernels[i]]))
-        workers.append(Worker(core_body_in2, fn_args=[of_q_out[i].cons(), of_k_out[i].cons(), of_score[i].prod(), score_kernels[i]]))
-        workers.append(Worker(core_body_in2, fn_args=[of_score[i].cons(), of_v_out[i].cons(), of_context[i].prod(), context_kernels[i]]))
-
-    workers.append(Worker(core_body_in2, fn_args=[of_context[0].cons(), of_context[1].cons(), of_concat[0].prod(), concat_kernels[0]]))
-    workers.append(Worker(core_body_in2, fn_args=[of_context[2].cons(), of_context[3].cons(), of_concat[1].prod(), concat_kernels[1]]))
-    workers.append(Worker(core_body_in2, fn_args=[of_concat[0].cons(), of_concat[1].cons(), of_out.prod(), out_kernel]))
-
-
-    # for i in range(2):
-    #     workers.append(Worker(core_body_qkv, fn_args=[of_mha_in.cons(), 
-    #                                                     of_q_out[i].prod(), of_k_out[i].prod(), of_v_out[i].prod(),
-    #                                                     qkv_kernels[i]]))
-    #     workers.append(Worker(core_body_in2, fn_args=[of_q_out[i].cons(), of_k_out[i].cons(), of_score[i].prod(), score_kernels[i]]))
-    #     workers.append(Worker(core_body_in2, fn_args=[of_score[i].cons(), of_v_out[i].cons(), of_context[i].prod(), context_kernels[i]]))
-
-    # workers.append(Worker(core_body_in2, fn_args=[of_context[0].cons(), of_context[1].cons(), of_concat[0].prod(), concat_kernels[0]]))
-    # workers.append(Worker(core_body_in2, fn_args=[of_concat[0].cons(), of_concat[0].cons(), of_out.prod(), out_kernel]))
-    
-    # Runtime and data movement
-    rt = Runtime()
-    with rt.sequence(in_ty, out_ty) as (a_x, c_z):
-        rt.start(*workers)
-        rt.fill(of_in.prod(), a_x)
-        rt.drain(of_out.cons(), c_z, wait=True)
-
-    # Program + placement
-    my_program = Program(iron.get_current_device(), rt)
-    return my_program.resolve_program(SequentialPlacer())
 
 def main():
     element_type = np.int8
     
     inp = np.loadtxt("./data/input.txt", dtype=np.int8)
-    ref = np.loadtxt("./data/a1_golden.txt", dtype=np.int8).flatten()
+    ref = np.loadtxt("./data/a5_golden.txt", dtype=np.int8).flatten()
 
     INPUT_ROWS = 160
     INPUT_COLS = 8
@@ -251,11 +369,24 @@ def main():
 
     # Convert/set Iron tensors for kernel input and output
     inp_tensor = iron.tensor(inp_tiled, dtype=np.int8, device="npu")
+    mha_in_tensor = iron.zeros(160*64, dtype=element_type, device="npu")
+    context_tensor = [iron.zeros(160*16, dtype=element_type, device="npu") for i in range(4)]
+    mha_out_tensor = iron.zeros(160*64, dtype=element_type, device="npu")
     output = iron.zeros(OUTPUT_SIZE, dtype=element_type, device="npu")
 
     # Insantiate AIE Kernel
-    particle_transformer(inp_tensor, output)
+    dense_fn = make_dense_ly(0)
+    mha_p1_fn = [make_mha_p1(1, i) for i in range(4)]
+    mha_p2_fn = make_mha_p2(1)
+    resadd_fn = make_resadd_ly(2)
 
+    # Run kernels
+    dense_fn(inp_tensor, mha_in_tensor)
+    for i in range(4):
+        mha_p1_fn[i](mha_in_tensor, context_tensor[i])
+    mha_p2_fn(context_tensor[0], context_tensor[0], context_tensor[0], context_tensor[0], mha_out_tensor)
+    resadd_fn(mha_in_tensor, mha_out_tensor, output)
+    
     out_np = np.array(output, dtype=np.int8)
 
     errors = 0
