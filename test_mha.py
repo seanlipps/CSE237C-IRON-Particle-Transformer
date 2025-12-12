@@ -210,6 +210,7 @@ def dense_v(input0, output):
 @iron.jit(is_placed=False)
 def score_ly(input0, input1, output):
     N = input0.shape[0]  # Tensor size
+    N1 = input1.shape[0]
     N_out = output.shape[0]
     element_type = output.dtype
 
@@ -217,14 +218,13 @@ def score_ly(input0, input1, output):
     # In-Array Data Movement
     # --------------------------------------------------------------------------
 
-    in_ty = np.ndarray[(N,), np.dtype[element_type]]
+    in_tx = np.ndarray[(N,), np.dtype[element_type]]
+    in_ty = np.ndarray[(N1,), np.dtype[element_type]]
     out_ty = np.ndarray[(N_out,), np.dtype[element_type]]
-    out_tyx2 = np.ndarray[(N_out*2,), np.dtype[element_type]]
 
-    of_x = ObjectFifo(in_ty, depth=1, name="x")
+    of_x = ObjectFifo(in_tx, depth=1, name="x")
     of_y = ObjectFifo(in_ty, depth=1, name="y")
-    # of_z = ObjectFifo(out_ty, depth=1, name="z")
-    of_z = ObjectFifo(out_tyx2, depth=1, name="z")
+    of_z = ObjectFifo(out_ty, depth=1, name="z")
 
     # --------------------------------------------------------------------------
     # Task each core will run
@@ -233,7 +233,7 @@ def score_ly(input0, input1, output):
     score_ly_kernel = ExternalFunction(
         "score_kernel",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_scores_head0.cc"),
-        arg_types=[in_ty, in_ty, out_tyx2],
+        arg_types=[in_tx, in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
@@ -258,7 +258,7 @@ def score_ly(input0, input1, output):
     # --------------------------------------------------------------------------
 
     rt = Runtime()
-    with rt.sequence(in_ty, in_ty, out_ty) as (a_x, a_y, c_z):
+    with rt.sequence(in_tx, in_ty, out_ty) as (a_x, a_y, c_z):
         rt.start(worker)
         rt.fill(of_x.prod(), a_x)
         rt.fill(of_y.prod(), a_y)
@@ -276,6 +276,7 @@ def score_ly(input0, input1, output):
 @iron.jit(is_placed=False)
 def context_ly(input0, input1, output):
     N = input0.shape[0] # Tensor size
+    N1 = input1.shape[0]
     N_out = output.shape[0]
     element_type = output.dtype
 
@@ -283,10 +284,11 @@ def context_ly(input0, input1, output):
     # In-Array Data Movement
     # --------------------------------------------------------------------------
 
-    in_ty = np.ndarray[(N,), np.dtype[element_type]]
+    in_tx = np.ndarray[(N,), np.dtype[element_type]]
+    in_ty = np.ndarray[(N1,), np.dtype[element_type]]
     out_ty = np.ndarray[(N_out,), np.dtype[element_type]]
 
-    of_x = ObjectFifo(in_ty, name="x")
+    of_x = ObjectFifo(in_tx, name="x")
     of_y = ObjectFifo(in_ty, name="y")
     of_z = ObjectFifo(out_ty, name="z")
 
@@ -297,7 +299,7 @@ def context_ly(input0, input1, output):
     context_ly_kernel = ExternalFunction(
         "context_kernel",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_context_head0.cc"),
-        arg_types=[in_ty, in_ty, out_ty],
+        arg_types=[in_tx, in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
@@ -322,7 +324,7 @@ def context_ly(input0, input1, output):
     # --------------------------------------------------------------------------
 
     rt = Runtime()
-    with rt.sequence(in_ty, in_ty, out_ty) as (a_x, a_y, c_z):
+    with rt.sequence(in_tx, in_ty, out_ty) as (a_x, a_y, c_z):
         rt.start(worker)
         rt.fill(of_x.prod(), a_x)
         rt.fill(of_y.prod(), a_y)
@@ -435,22 +437,38 @@ def main():
     print("context_output: ", context_output);
     output_ly(context_output, output_output)
     print("output_output: ", output_output);
+
+    np.savetxt("q_output.txt",
+               np.array(q_output, dtype=np.int8),
+               fmt="%d")
+    np.savetxt("k_output.txt",
+               np.array(k_output, dtype=np.int8),
+               fmt="%d")
+    np.savetxt("scores_output.txt",
+               np.array(score_output, dtype=np.int8),
+               fmt="%d")
+    np.savetxt("context_output.txt",
+               np.array(context_output, dtype=np.int8),
+               fmt="%d")
+    np.savetxt("output_output.txt",
+               np.array(output_output, dtype=np.int8),
+               fmt="%d")
     
     out_np = np.array(output_output, dtype=np.int8)
 
-    # errors = 0
-    # for i, (a, r) in enumerate(zip(out_np, ref)):
-    #     if a != r:
-    #         print(f"Error at {i}: {a} != {r}")
-    #         errors += 1
+    errors = 0
+    for i, (a, r) in enumerate(zip(out_np, ref)):
+        if a != r:
+            # print(f"Error at {i}: {a} != {r}")
+            errors += 1
 
-    # if errors == 0:
-    #     print("\nPASS!\n")
-    #     sys.exit(0)
-    # else:
-    #     print(f"\nError count: {errors}")
-    #     print("failed.\n")
-    #     sys.exit(1)
+    if errors == 0:
+        print("\nPASS!\n")
+        sys.exit(0)
+    else:
+        print(f"\nError count: {errors}")
+        print("failed.\n")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

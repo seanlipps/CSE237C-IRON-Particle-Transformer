@@ -51,8 +51,8 @@ const int8_t * matB
 // m=4, k=8, n=8, T=160, d_model=64, Tm(rows)=160/m=40, Tn(columns)=64/n=8
 template <int m, int k, int n, int Tm, int Tk, int Tn, int d_model, int T, int SHIFT_S>
 void scores(
-  int8_t * __restrict pQ, // adf::input_buffer<int8, adf::extents<T*d_model>> & sQ,
-  int8_t * __restrict pK, // adf::input_buffer<int8, adf::extents<T*d_model>> & sK,
+  int8_t * __restrict pQ,
+  int8_t * __restrict pK,
   int8_t * __restrict pS
 ) {
   using MMUL = aie::mmul<m, n, n, int8, int8>; // 4x8x8
@@ -65,31 +65,35 @@ void scores(
   const int8_t* ptrQ = pQ;
   const int8_t* ptrK = pK;
   int8_t* ptrS = pS;
-  VB matB[Tk*Tn]; //store all of pK in mem
+    
+  static VB matB[Tm*Tn]; //store all of pK in mem
 
-  for (unsigned i = 0; i < Tk; ++i) {
+  alignas(32) int8_t tile[m*n]; //4x8
+  alignas(32) int8_t trans_tile[n*n] = {}; //8x8, initialize with 0s
+
+  alignas(32) int8_t otile[MMUL::size_C]; //4x8
+  alignas(32) int8_t out_tile[m*m]; //4x4
+
+  for (unsigned i = 0; i < Tm; ++i) {
     for (unsigned j = 0; j < Tn; ++j) {
-      int8_t tile[m*k]; //4x8
-      int8_t trans_tile[k*n] = {}; //8x8, initialize with 0s
-      aie::store_v(tile, aie::load_v<m*k>(ptrK));
-
+      aie::store_v(tile, aie::load_v<MMUL::size_A>(ptrK));
+      ptrK += MMUL::size_A;
       unsigned c = 0;
-      for (unsigned a = 0; a < k; a++) { //trans_tile gets 8x4 of data
-          for (unsigned b = 0; b < n/2; b++) { 
+      for (unsigned a = 0; a < m; a++) { //trans_tile gets 8x4 of data
+          for (unsigned b = 0; b < n; b++) { 
             trans_tile[b*n+a] = tile[c];
             c++;
           }
       }
       VB vK = aie::load_v<MMUL::size_B>(trans_tile); //8x8
       matB[i*Tn+j] = vK;
-      ptrK += MMUL::size_A;
     }
   }
   
   // row by row multiplication
-  for (unsigned im = 0; im < Tm; ++im) {   // rows of Q
+  for (unsigned im = 0; im < Tm; ++im) {
     VA Abuf[Tn]; // row of tiles
-    for (unsigned in = 0; in < Tn; ++in) { // columns of Q
+    for (unsigned in = 0; in < Tn; ++in) {
       Abuf[in] = aie::load_v<MMUL::size_A>(ptrQ);
       ptrQ += MMUL::size_A;
     }
@@ -100,17 +104,15 @@ void scores(
         else         C.mac(Abuf[in], matB[jm*Tn+in]);
       }
       VC v = C.template to_vector<int8>(SHIFT_S); //4x8
-      int8_t tile[MMUL::size_C]; //4x8
-      int8_t out_tile[m*m] = {}; //4x4
-      aie::store_v(tile, v);
+      aie::store_v(otile, v);
       for (unsigned r = 0; r < m; ++r) {
           for (unsigned c = 0; c < m; ++c) {
-              out_tile[r*m+c] = tile[r*n+c];
+              out_tile[r*m+c] = otile[r*n+c];
           }
       }
       VCout vout= aie::load_v<m*m>(out_tile);//4x4
       aie::store_v(ptrS, vout);
-      ptrS += MMUL::size_C; 
+      ptrS += m*m; 
     }
   }
 }
@@ -130,18 +132,18 @@ void context(
   using VB   = aie::vector<int16, MMUL::size_B>; // 4x8 (int16)
   using VC   = aie::vector<int16, MMUL::size_C>; // 4x8 (int16)
 
-  using VBin = aie::vector<int8, MMUL::size_B>; // 4x8 (int8)
-  using VCout = aie::vector<int8, MMUL::size_C>; // 4x8 (int8)
+  using VBin = aie::vector<int8, m*n>; // 4x8 (int8)
+  using VCout = aie::vector<int8, m*n>; // 4x8 (int8)
 
   const int8_t* ptrS = pS;
   const int8_t* ptrV = pV;
   int8_t* ptrC = pC;
-  VB matB[Tm*Tn];
+  static VB matB[Tm*Tn];
 
   for (unsigned im = 0; im < Tm; ++im) { // rows
     for (unsigned in = 0; in < Tn; ++in) { // columns
-      VBin B = aie::load_v<MMUL::size_B>(ptrV); // 4x8
-      ptrV += MMUL::size_B;
+      VBin B = aie::load_v<m*n>(ptrV); // 4x8
+      ptrV += m*n;
       VB B16 = B.unpack();
       matB[im*Tn+in] = B16; //convert to int16 for 4x4x8
     }
@@ -165,7 +167,7 @@ void context(
       VC v = C.template to_vector<int16>(SHIFT);
       VCout vout = v.pack();
       aie::store_v(ptrC, vout);
-      ptrC += MMUL::size_C;
+      ptrC += m*n;
     }
   }
 }
