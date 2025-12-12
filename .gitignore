@@ -27,3 +27,5 @@ golden_debug.ipynb
 *__pycache__
 pl_sample_count**
 .ipynb_checkpoints/
+*_output.txt
+

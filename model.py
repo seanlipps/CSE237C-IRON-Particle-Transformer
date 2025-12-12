@@ -80,12 +80,10 @@ class AIEModel:
         Execute the complete AIE workflow.
 
         Steps:
-        1. Compute golden reference (NumPy)
-        2. Save golden outputs to files
-        3. Generate AIE C++ code
-        4. Compile with Vitis
-        5. Run simulation
-        6. Validate against golden
+        1. Compute golden reference (NumPy) & Save to files
+        2. Generate AIE C++ kernel code
+        3. Run on NPU using Iron
+        4. Validate against golden
 
         Args:
             input_data: Input array (will be saved and tiled)
@@ -99,22 +97,16 @@ class AIEModel:
         print("AIE Model Forward Pass")
         print("=" * 60)
 
-        print("\n[1/6] Computing golden reference...")
+        print("\n[1/4] Computing golden reference...")
         self._compute_golden()
 
-        print("\n[2/6] Creating include.h header...")
-        self._generate_include_header()
-
-        print("\n[3/6] Generating AIE kernel code...")
+        print("\n[2/4] Generating AIE kernel code...")
         self._generate_kernels()
 
-        print("\n[4/6] Generating graph connections...")
-        self._generate_graph()
-
-        print("\n[5/6] Compiling and simulating...")
+        print("\n[3/4] Running on NPU using Iron...")
         self._run_simulation()
 
-        print("\n[6/6] Validating results...")
+        print("\n[4/4] Validating results...")
         match = self._validate_output()
 
         if match:
@@ -200,56 +192,6 @@ class AIEModel:
 
         print(f"  ✓ Generated {len(self.layers)} kernel files")
 
-    def _generate_graph(self):
-        """Generate graph.cpp and layer_graph.h (connections separated)."""
-        with open("aie/layer_graph.h", "w") as lg:
-            for layer in self.layers:
-                input_ports = self._get_layer_input_ports(layer)
-                layer.generate_graph_code(lg, input_ports)
-            final_layer = self.layers[-1]
-            lg.write(f'        connect<stream>({final_layer.get_output_port()}.out[0], AIE_OUT.in[0]);\n')
-
-        with open("aie/graph.cpp", "w") as f:
-            f.write('#include <adf.h>\n')
-            f.write('#include "include.h"\n')
-            f.write('#include <vector>\n\n')
-            f.write('using namespace adf;\n\n')
-
-            f.write('class simpleGraph : public adf::graph {\n')
-            f.write('public:\n')
-            f.write('  input_plio  AIE_IN;\n')
-            f.write('  output_plio AIE_OUT;\n\n')
-
-            for layer in self.layers:
-                f.write(f'  kernel {layer.name} [{layer.num_kernels()}];\n')
-            f.write('\n  simpleGraph(){\n\n')
-
-            input_bytes = self.input_data.size * self.input_data.itemsize * self.iterations
-            output_bytes = self.layers[-1].outputs['a'].size * self.layers[-1].outputs['a'].itemsize * self.iterations
-            f.write(f'    AIE_IN = input_plio::create("DataIn", plio_128_bits, "data/input.txt", {input_bytes});\n')
-            f.write(f'    AIE_OUT = output_plio::create("DataOut", plio_128_bits, "data/out_sim.txt", {output_bytes});\n\n')
-
-            f.write('    #include "layer_graph.h"\n\n')
-
-            f.write('  }\n');
-            f.write('};\n\n')
-
-            f.write('simpleGraph mygraph;\n\n')
-            f.write('int main(void) {\n')
-            f.write('  mygraph.init();\n')
-            f.write('  adf::event::handle h_latency =\n')
-            f.write('    adf::event::start_profiling(mygraph.AIE_IN, mygraph.AIE_OUT,\n')
-            f.write('                                adf::event::io_stream_start_difference_cycles);\n')
-            f.write('  mygraph.run(ITERATIONS);\n')
-            f.write('  mygraph.end();\n')
-            f.write('  long long latency_cycles = adf::event::read_profiling(h_latency);\n')
-            f.write('  adf::event::stop_profiling(h_latency);\n')
-            f.write('  const int AIE_clock_Hz = 1200000000;\n')
-            f.write('  printf("\\n\\n\\n--------GRAPH LATENCY    (First in  -> First out) : %lld cycles, %.1f ns\\n\\n\\n",\n')
-            f.write('         latency_cycles, (1e9 * (double)latency_cycles) / AIE_clock_Hz);\n')
-            f.write('  return 0;\n')
-            f.write('}\n')
-
     def _get_layer_input_ports(self, layer) -> List[str]:
         """
         Get input port names for a layer.
@@ -271,18 +213,10 @@ class AIEModel:
 
         return port_names
 
-    def _generate_include_header(self):
-        """Generate include.h header (layers append their own function declarations)."""
-        with open("aie/include.h", "w") as f:
-            f.write(f'#define N_LAYERS {len(self.layers)}\n')
-            f.write(f'#define ITERATIONS {self.iterations}\n\n')
-
-        print(f"  ✓ Created include.h header (function declarations added by layers)")
-
     def _run_simulation(self):
-        """Run Vitis compilation and AIE simulation."""
+        """Run kernel codes on NPU using Iron"""
         try:
-            subprocess.run(["./run.sh"], check=True, cwd=".")
+            subprocess.run(["./run.sh"], check=True, cwd=".") # this is where we run the top iron script
             print(f"  ✓ Compilation and simulation complete")
         except subprocess.CalledProcessError as e:
             print(f"  ✗ Error during compilation/simulation: {e}")
@@ -295,7 +229,7 @@ class AIEModel:
         Returns:
             True if outputs match, False otherwise
         """
-        aie_out_path = "aiesimulator_output/data/out_sim.txt"
+        aie_out_path = "aiesimulator_output/data/out_sim.txt"     # iron output txt should be here
 
         if not os.path.exists(aie_out_path):
             print(f"  ✗ AIE output file not found: {aie_out_path}")
