@@ -6,9 +6,9 @@ from layers import DenseLayer, MHALayer, ResAddLayer
 def build_and_run(seed: int = 0):
     rng = np.random.default_rng(seed)
 
-    in_particles, num_feature, ff_dim = 150, 3, 64
+    in_particles, num_feature, ff_dim = 35, 3, 64
     num_feature_pad = 8
-    num_particles_pad = 160
+    num_particles_pad = 40
 
     dummy_inp = rng.integers(-128, 128, size=(in_particles, num_feature), dtype=np.int8)
     pad_inp = np.zeros((num_particles_pad, num_feature_pad), dtype=np.int8)

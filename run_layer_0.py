@@ -87,9 +87,9 @@ def main():
     inp = np.loadtxt("./data/input.txt", dtype=np.int8)
     ref = np.loadtxt("./data/a0_golden.txt", dtype=np.int8).flatten()
 
-    INPUT_ROWS = 160
+    INPUT_ROWS = 40
     INPUT_COLS = 8
-    OUTPUT_SIZE = 160 * 64
+    OUTPUT_SIZE = 40 * 64
 
     if inp.size != INPUT_ROWS * INPUT_COLS:
         raise ValueError(f"input size {inp.size} != {INPUT_ROWS*INPUT_COLS}")
