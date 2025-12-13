@@ -15,7 +15,7 @@ from aie.dialects.aie import *  # primary mlir-aie dialect definitions
 
 ########################################
 @iron.jit(is_placed=False, use_cache=False)
-def mha_head_0(input0, output):
+def mha_head_2(input0, output):
     N = input0.shape[0]  # Tensor size
     N_out = output.shape[0]
     element_type = output.dtype
@@ -41,45 +41,45 @@ def mha_head_0(input0, output):
     # The kernel acquires input tensors X and Y, and output tensor Z, performs the
     # SAXPY operation on X and Y, and writes the result in Z.
 
-    head_0_q_kernel = ExternalFunction(
-        "q1_head0",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_q_head0.cc"),
+    head_2_q_kernel = ExternalFunction(
+        "q1_head2",
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_q_head2.cc"),
         arg_types=[in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
         ],
     )
-    head_0_k_kernel = ExternalFunction(
-        "k1_head0",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_k_head0.cc"),
+    head_2_k_kernel = ExternalFunction(
+        "k1_head2",
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_k_head2.cc"),
         arg_types=[in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
         ],
     )
-    head_0_v_kernel = ExternalFunction(
-        "v1_head0",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_v_head0.cc"),
+    head_2_v_kernel = ExternalFunction(
+        "v1_head2",
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_v_head2.cc"),
         arg_types=[in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
         ],
     )
-    head_0_scores_kernel = ExternalFunction(
-        "scores1_head0",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_scores_head0.cc"),
+    head_2_scores_kernel = ExternalFunction(
+        "scores1_head2",
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_scores_head2.cc"),
         arg_types=[in_ty, in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
         ],
     )
-    head_0_context_kernel = ExternalFunction(
-        "context1_head0",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_context_head0.cc"),
+    head_2_context_kernel = ExternalFunction(
+        "context1_head2",
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_context_head2.cc"),
         arg_types=[in_ty, in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
@@ -104,11 +104,11 @@ def mha_head_0(input0, output):
         of_z.release(1)
 
     workers = []
-    workers.append(Worker(core_body_1_in, fn_args=[of_0.cons(), of_1.prod(), head_0_q_kernel]))
-    workers.append(Worker(core_body_1_in, fn_args=[of_0.cons(), of_2.prod(), head_0_k_kernel]))
-    workers.append(Worker(core_body_1_in, fn_args=[of_0.cons(), of_3.prod(), head_0_v_kernel]))
-    workers.append(Worker(core_body_2_in, fn_args=[of_1.cons(), of_2.cons(), of_4.prod(), head_0_scores_kernel]))
-    workers.append(Worker(core_body_2_in, fn_args=[of_4.cons(), of_3.cons(), of_5.prod(), head_0_context_kernel]))
+    workers.append(Worker(core_body_1_in, fn_args=[of_0.cons(), of_1.prod(), head_2_q_kernel]))
+    workers.append(Worker(core_body_1_in, fn_args=[of_0.cons(), of_2.prod(), head_2_k_kernel]))
+    workers.append(Worker(core_body_1_in, fn_args=[of_0.cons(), of_3.prod(), head_2_v_kernel]))
+    workers.append(Worker(core_body_2_in, fn_args=[of_1.cons(), of_2.cons(), of_4.prod(), head_2_scores_kernel]))
+    workers.append(Worker(core_body_2_in, fn_args=[of_4.cons(), of_3.cons(), of_5.prod(), head_2_context_kernel]))
                    
 
     # --------------------------------------------------------------------------
@@ -149,9 +149,9 @@ def main():
     output = iron.zeros(OUTPUT_SIZE, dtype=element_type, device="npu")
 
     # Insantiate AIE Kernel
-    mha_head_0(inp_tensor, output)
+    mha_head_2(inp_tensor, output)
 
-    np.savetxt("./data/a1_head_0_real.txt",
+    np.savetxt("./data/a1_head_2_real.txt",
                np.array(output, dtype=np.int8),
                fmt="%d")
 
