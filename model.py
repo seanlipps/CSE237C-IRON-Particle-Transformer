@@ -82,9 +82,9 @@ class AIEModel:
         Steps:
         1. Compute golden reference (NumPy) & Save to files
         2. Generate AIE C++ kernel code
-        3. Run on NPU using Iron
-        4. Validate against golden
-
+        3. Run on NPU using Iron 
+        4. Validate against golden output
+        
         Args:
             input_data: Input array (will be saved and tiled)
 
@@ -216,7 +216,13 @@ class AIEModel:
     def _run_simulation(self):
         """Run kernel codes on NPU using Iron"""
         try:
-            subprocess.run(["./run.sh"], check=True, cwd=".") # this is where we run the top iron script
+            subprocess.run(
+            ["python3", "test_5_top_iron.py"],
+            check=True,
+            cwd=".",
+            text=True,
+            capture_output=True,
+            )
             print(f"  ✓ Compilation and simulation complete")
         except subprocess.CalledProcessError as e:
             print(f"  ✗ Error during compilation/simulation: {e}")
@@ -229,21 +235,21 @@ class AIEModel:
         Returns:
             True if outputs match, False otherwise
         """
-        aie_out_path = "aiesimulator_output/data/out_sim.txt"     # iron output txt should be here
+        iron_out_path = "/data/out_sim.txt"     # iron output txt should be here
 
-        if not os.path.exists(aie_out_path):
-            print(f"  ✗ AIE output file not found: {aie_out_path}")
+        if not os.path.exists(iron_out_path):
+            print(f"  ✗ iron output file not found: {iron_out_path}")
             return False
 
         # Clean AIE output (remove timestamp lines)
-        with open(aie_out_path, "r") as infile, open("data/out_sim.txt", "w") as outfile:
+        with open(iron_out_path, "r") as infile, open("data/out_sim.txt", "w") as outfile:
             for line in infile:
                 if not line.startswith("T"):
                     outfile.write(line)
 
         # Load and compare
-        out_sim = np.loadtxt("data/out_sim.txt").astype(np.int32)
-        out_ref = np.loadtxt("data/out_ref.txt").astype(np.int32)
+        out_sim = np.loadtxt("data/out_sim.txt").astype(np.int8)
+        out_ref = np.loadtxt("data/out_ref.txt").astype(np.int8)
 
         if out_sim.shape != out_ref.shape:
             print(f"  ✗ Shape mismatch: sim={out_sim.shape}, ref={out_ref.shape}")

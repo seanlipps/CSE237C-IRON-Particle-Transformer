@@ -49,33 +49,52 @@ const int8_t * matB
 // (Q @ K^T):  (T, head_dim) @ (T, head_dim)^T -> (T, T)
 // 160*16 @ 160*16^T = 160*160
 // m=4, k=8, n=8, T=160, d_model=64, head_dim = 64/4 = 16, Tm(rows)=160/m=40, Tk = head_dim/k = 16/8 = 2, Tn (columns)= head_dim/k = 16/8 = 2
+// (Q @ K^T):  (T, head_dim) @ (T, head_dim)^T -> (T, T)
 template <int m, int k, int n, int Tm, int Tk, int Tn, int d_model, int T, int SHIFT_S>
 void scores(
-  int8_t * __restrict pQ, // adf::input_buffer<int8, adf::extents<T*d_model>> & sQ,
-  int8_t * __restrict pK, // adf::input_buffer<int8, adf::extents<T*d_model>> & sK,
+  int8_t * __restrict pQ,
+  int8_t * __restrict pK,
   int8_t * __restrict pS
 ) {
-  using MMUL = aie::mmul<m, k, n, int8, int8>; // 4x8x8
+  using MMUL = aie::mmul<m, n, n, int8, int8>; // 4x8x8
   using VA   = aie::vector<int8, MMUL::size_A>; // 4x8
   using VB   = aie::vector<int8, MMUL::size_B>; // 8x8
   using VC   = aie::vector<int8, MMUL::size_C>; // 4x8
 
+  using VCout= aie::vector<int8, m*m>; // 4x4
+
   const int8_t* ptrQ = pQ;
   const int8_t* ptrK = pK;
   int8_t* ptrS = pS;
-  VB matB[Tm*Tn]; //store all of pK in mem
+    
+  static VB matB[Tm*Tn]; //store all of pK in mem
 
-  for (unsigned i = 0; i < Tm; ++i) { // rows
-    for (unsigned j = 0; j < Tn; ++j) { // columns
-      matB[i*Tn+j] = aie::transpose(aie::load_v<MMUL::size_B>(ptrK), m, n);
+  alignas(32) int8_t tile[m*n]; //4x8
+  alignas(32) int8_t trans_tile[n*n] = {}; //8x8, initialize with 0s
+
+  alignas(32) int8_t otile[MMUL::size_C]; //4x8
+  alignas(32) int8_t out_tile[m*m]; //4x4
+
+  for (unsigned i = 0; i < Tm; ++i) {
+    for (unsigned j = 0; j < Tn; ++j) {
+      aie::store_v(tile, aie::load_v<MMUL::size_A>(ptrK));
       ptrK += MMUL::size_A;
+      unsigned c = 0;
+      for (unsigned a = 0; a < m; a++) { //trans_tile gets 8x4 of data
+          for (unsigned b = 0; b < n; b++) { 
+            trans_tile[b*n+a] = tile[c];
+            c++;
+          }
+      }
+      VB vK = aie::load_v<MMUL::size_B>(trans_tile); //8x8
+      matB[i*Tn+j] = vK;
     }
   }
   
   // row by row multiplication
-  for (unsigned im = 0; im < Tm; ++im) {   // rows of Q
+  for (unsigned im = 0; im < Tm; ++im) {
     VA Abuf[Tn]; // row of tiles
-    for (unsigned in = 0; in < Tn; ++in) { // columns of Q
+    for (unsigned in = 0; in < Tn; ++in) {
       Abuf[in] = aie::load_v<MMUL::size_A>(ptrQ);
       ptrQ += MMUL::size_A;
     }
@@ -85,13 +104,19 @@ void scores(
         if (in == 0) C.mul(Abuf[0], matB[jm*Tn+in]);
         else         C.mac(Abuf[in], matB[jm*Tn+in]);
       }
-      VC v = C.template to_vector<int8>(SHIFT_S);
-      aie::store_v(ptrS, v);
-      ptrS += MMUL::size_C;
+      VC v = C.template to_vector<int8>(SHIFT_S); //4x8
+      aie::store_v(otile, v);
+      for (unsigned r = 0; r < m; ++r) {
+          for (unsigned c = 0; c < m; ++c) {
+              out_tile[r*m+c] = otile[r*n+c];
+          }
+      }
+      VCout vout= aie::load_v<m*m>(out_tile);//4x4
+      aie::store_v(ptrS, vout);
+      ptrS += m*m; 
     }
   }
 }
-
 
 // (scores @ V)  (T,T) @ (T,head_dim) -> (T,head_dim)
 // Tm = 160/4 = 40, Tk = 160/8 = 20, Tn = 16/8 = 2

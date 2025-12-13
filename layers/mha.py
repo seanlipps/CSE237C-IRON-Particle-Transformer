@@ -142,7 +142,6 @@ class MHALayer(AIELayer):
             pass
 
         for h in range(self.num_heads):
-            print("self.num_heads\n")
             with open(f"iron_kernels/layer_{self.idx}_q_head{h}.cc", "w") as fq:
                 fq.write('#include "iron_kernels.h"\n\n')
                 
