@@ -70,13 +70,6 @@ def mha_tail(input0, input1, input2, input3, output):
         ],
     )
 
-    def core_body_1_in(of_x, of_z, kernel):
-        elem_x = of_x.acquire(1)
-        elem_z = of_z.acquire(1)
-        kernel(elem_x, elem_z)
-        of_x.release(1)
-        of_z.release(1)
-
     def core_body_2_in(of_x, of_y, of_z, kernel):
         elem_x = of_x.acquire(1)
         elem_y = of_y.acquire(1)
@@ -134,13 +127,13 @@ def main():
     if inp3.size != INPUT_ROWS * INPUT_COLS:
         raise ValueError(f"input size {inp3.size} != {INPUT_ROWS*INPUT_COLS}")
 
-    inp0_mat = inp1.reshape(INPUT_ROWS, INPUT_COLS)
+    inp0_mat = inp0.reshape(INPUT_ROWS, INPUT_COLS)
     inp0_tiled = tile_matrix(inp0_mat, 4, 8)  # flattened tiled input
     inp1_mat = inp1.reshape(INPUT_ROWS, INPUT_COLS)
     inp1_tiled = tile_matrix(inp1_mat, 4, 8)  # flattened tiled input
-    inp2_mat = inp1.reshape(INPUT_ROWS, INPUT_COLS)
+    inp2_mat = inp2.reshape(INPUT_ROWS, INPUT_COLS)
     inp2_tiled = tile_matrix(inp2_mat, 4, 8)  # flattened tiled input
-    inp3_mat = inp1.reshape(INPUT_ROWS, INPUT_COLS)
+    inp3_mat = inp3.reshape(INPUT_ROWS, INPUT_COLS)
     inp3_tiled = tile_matrix(inp3_mat, 4, 8)  # flattened tiled input
     
 

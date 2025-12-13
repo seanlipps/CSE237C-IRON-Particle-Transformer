@@ -25,13 +25,14 @@ def mha_head_2(input0, output):
     # --------------------------------------------------------------------------
 
     in_ty = np.ndarray[(N,), np.dtype[element_type]]
+    score_ty = np.ndarray[(40*40,), np.dtype[element_type]] # because INPUT_ROWS = 40 in main()
     out_ty = np.ndarray[(N_out,), np.dtype[element_type]]
 
     of_0 = ObjectFifo(in_ty, name="qkv_in")
     of_1 = ObjectFifo(out_ty, name="q_to_score")
     of_2 = ObjectFifo(out_ty, name="k_to_score")
     of_3 = ObjectFifo(out_ty, name="v_to_context")
-    of_4 = ObjectFifo(out_ty, name="score_to_context")
+    of_4 = ObjectFifo(score_ty, name="score_to_context")
     of_5 = ObjectFifo(out_ty, name="context_out")
 
     # --------------------------------------------------------------------------
@@ -71,7 +72,7 @@ def mha_head_2(input0, output):
     head_2_scores_kernel = ExternalFunction(
         "scores1_head2",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_scores_head2.cc"),
-        arg_types=[in_ty, in_ty, out_ty],
+        arg_types=[out_ty, out_ty, score_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
@@ -80,7 +81,7 @@ def mha_head_2(input0, output):
     head_2_context_kernel = ExternalFunction(
         "context1_head2",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_context_head2.cc"),
-        arg_types=[in_ty, in_ty, out_ty],
+        arg_types=[score_ty, out_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
