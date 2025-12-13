@@ -403,8 +403,8 @@ def output_ly(input0, output):
 def main():
     element_type = np.int8
     
-    inp = np.loadtxt("./iron_kernels/data/a0_real.txt", dtype=np.int8).flatten()
-    ref = np.loadtxt("./iron_kernels/data/a1_golden.txt", dtype=np.int8).flatten()
+    inp = np.loadtxt("./data/a0_real.txt", dtype=np.int8).flatten()
+    ref = np.loadtxt("./data/a1_golden.txt", dtype=np.int8).flatten()
 
     INPUT_ROWS = 40
     ff_dim = 64
