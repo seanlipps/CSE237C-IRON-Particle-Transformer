@@ -15,7 +15,7 @@ from aie.dialects.aie import *  # primary mlir-aie dialect definitions
 
 ########################################
 @iron.jit(is_placed=False, use_cache=False)
-def mha_head_0(input0, output):
+def mha_head_0(input0, output, out_test):
     N = input0.shape[0]  # Tensor size
     N_out = output.shape[0]
     element_type = output.dtype
@@ -25,15 +25,17 @@ def mha_head_0(input0, output):
     # --------------------------------------------------------------------------
 
     in_ty = np.ndarray[(N,), np.dtype[element_type]]
+    qkv_ty = np.ndarray[(40*16,), np.dtype[element_type]] 
     score_ty = np.ndarray[(40*40,), np.dtype[element_type]] # because INPUT_ROWS = 40 in main()
     out_ty = np.ndarray[(N_out,), np.dtype[element_type]]
 
     of_0 = ObjectFifo(in_ty, name="qkv_in")
-    of_1 = ObjectFifo(out_ty, name="q_to_score")
-    of_2 = ObjectFifo(out_ty, name="k_to_score")
-    of_3 = ObjectFifo(out_ty, name="v_to_context")
+    of_1 = ObjectFifo(qkv_ty, name="q_to_score")
+    of_2 = ObjectFifo(qkv_ty, name="k_to_score")
+    of_3 = ObjectFifo(qkv_ty, name="v_to_context")
     of_4 = ObjectFifo(score_ty, name="score_to_context")
     of_5 = ObjectFifo(out_ty, name="context_out")
+    of_test = of_4.cons().forward(obj_type=score_ty, name="test")
 
     # --------------------------------------------------------------------------
     # Task each core will run
@@ -45,7 +47,7 @@ def mha_head_0(input0, output):
     head_0_q_kernel = ExternalFunction(
         "q1_head0",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_q_head0.cc"),
-        arg_types=[in_ty, out_ty],
+        arg_types=[in_ty, qkv_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
@@ -54,7 +56,7 @@ def mha_head_0(input0, output):
     head_0_k_kernel = ExternalFunction(
         "k1_head0",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_k_head0.cc"),
-        arg_types=[in_ty, out_ty],
+        arg_types=[in_ty, qkv_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
@@ -63,7 +65,7 @@ def mha_head_0(input0, output):
     head_0_v_kernel = ExternalFunction(
         "v1_head0",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_v_head0.cc"),
-        arg_types=[in_ty, out_ty],
+        arg_types=[in_ty, qkv_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
@@ -72,7 +74,7 @@ def mha_head_0(input0, output):
     head_0_scores_kernel = ExternalFunction(
         "scores1_head0",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_scores_head0.cc"),
-        arg_types=[out_ty, out_ty, score_ty],
+        arg_types=[qkv_ty, qkv_ty, score_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
@@ -81,7 +83,7 @@ def mha_head_0(input0, output):
     head_0_context_kernel = ExternalFunction(
         "context1_head0",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_context_head0.cc"),
-        arg_types=[score_ty, out_ty, out_ty],
+        arg_types=[score_ty, qkv_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
@@ -117,10 +119,11 @@ def mha_head_0(input0, output):
     # --------------------------------------------------------------------------
 
     rt = Runtime()
-    with rt.sequence(in_ty, out_ty) as (a_x, c_z):
+    with rt.sequence(in_ty, out_ty, qkv_ty) as (a_x, c_z, t_t):
         rt.start(*workers)
         rt.fill(of_0.prod(), a_x)
         rt.drain(of_5.cons(), c_z, wait=True)
+        rt.drain(of_test.cons(), t_t, wait=True)
 
     # --------------------------------------------------------------------------
     # Place and generate MLIR program
@@ -137,7 +140,7 @@ def main():
 
     INPUT_ROWS = 40
     INPUT_COLS = 64
-    OUTPUT_SIZE = 40 * 64
+    OUTPUT_SIZE = 40 * 16
 
     if inp.size != INPUT_ROWS * INPUT_COLS:
         raise ValueError(f"input size {inp.size} != {INPUT_ROWS*INPUT_COLS}")
@@ -150,11 +153,17 @@ def main():
     inp_tensor = iron.tensor(inp, dtype=np.int8, device="npu")
     output = iron.zeros(OUTPUT_SIZE, dtype=element_type, device="npu")
 
+    test = iron.zeros(40*40, dtype=element_type, device="npu")
+
     # Insantiate AIE Kernel
-    mha_head_0(inp_tensor, output)
+    mha_head_0(inp_tensor, output, test)
 
     np.savetxt("./data/a1_head_0_real.txt",
                np.array(output, dtype=np.int8),
+               fmt="%d")
+
+    np.savetxt("./data/a1_head_0_scores_real.txt",
+               np.array(test, dtype=np.int8),
                fmt="%d")
 
     # Compare golden output would be here if it existed for a single head

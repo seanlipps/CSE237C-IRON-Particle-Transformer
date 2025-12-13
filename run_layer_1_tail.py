@@ -25,14 +25,15 @@ def mha_tail(input0, input1, input2, input3, output):
     # --------------------------------------------------------------------------
 
     in_ty = np.ndarray[(N,), np.dtype[element_type]]
+    concat_ty = np.ndarray[(40*32,), np.dtype[element_type]]
     out_ty = np.ndarray[(N_out,), np.dtype[element_type]]
 
     of_0 = ObjectFifo(in_ty, name="head_0_in")
     of_1 = ObjectFifo(in_ty, name="head_1_in")
     of_2 = ObjectFifo(in_ty, name="head_2_in")
     of_3 = ObjectFifo(in_ty, name="head_3_in")
-    of_4 = ObjectFifo(out_ty, name="concat_0_to_out")
-    of_5 = ObjectFifo(out_ty, name="concat_1_to_out")
+    of_4 = ObjectFifo(concat_ty, name="concat_0_to_out")
+    of_5 = ObjectFifo(concat_ty, name="concat_1_to_out")
     of_6 = ObjectFifo(out_ty, name="out")
 
     # --------------------------------------------------------------------------
@@ -45,7 +46,7 @@ def mha_tail(input0, input1, input2, input3, output):
     concat_head_0_1_kernel = ExternalFunction(
         "concat1_0",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_concat.cc"),
-        arg_types=[in_ty, in_ty, out_ty],
+        arg_types=[in_ty, in_ty, concat_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
@@ -54,7 +55,7 @@ def mha_tail(input0, input1, input2, input3, output):
     concat_head_2_3_kernel = ExternalFunction(
         "concat1_1",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_concat.cc"),
-        arg_types=[in_ty, in_ty, out_ty],
+        arg_types=[in_ty, in_ty, concat_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
@@ -63,7 +64,7 @@ def mha_tail(input0, input1, input2, input3, output):
     out_kernel = ExternalFunction(
         "out1",
         source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_out.cc"),
-        arg_types=[out_ty, out_ty, out_ty],
+        arg_types=[concat_ty, concat_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
@@ -115,7 +116,7 @@ def main():
     ref = np.loadtxt("./data/a1_golden.txt", dtype=np.int8).flatten()
 
     INPUT_ROWS = 40
-    INPUT_COLS = 64
+    INPUT_COLS = 16
     OUTPUT_SIZE = 40 * 64
 
     if inp0.size != INPUT_ROWS * INPUT_COLS:
@@ -158,7 +159,7 @@ def main():
     errors = 0
     for i, (a, r) in enumerate(zip(out_np, ref)):
         if a != r:
-            print(f"Error at {i}: {a} != {r}")
+            # print(f"Error at {i}: {a} != {r}")
             errors += 1
 
     if errors == 0:

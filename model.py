@@ -157,7 +157,12 @@ class AIEModel:
             inputs = self._get_layer_inputs(layer)
 
             print(f"  Layer {i} ({layer.name}): ", end='')
-            output = layer._compute_golden(inputs)
+            output = []
+            if "mha" in layer.name:
+                print(layer.name)
+                output = layer._compute_golden(inputs, i)
+            else:
+                output = layer._compute_golden(inputs)
             print(f"output shape = {output.shape}")
 
             output_tiled = tile_matrix(output, self.m, self.n)

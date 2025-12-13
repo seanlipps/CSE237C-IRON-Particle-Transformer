@@ -49,7 +49,7 @@ class NumpyMHALinear:
         self.Wv = Wv
         self.Wo = Wo
 
-    def __call__(self, q, k=None, v=None, layers=None, training=False):
+    def __call__(self, q, k=None, v=None, layers=None, training=False, layer_num=0):
         # Normalize to (B,T,C)
         def to_btc(t):
             if t.ndim == 2:  # (T,C)
@@ -101,7 +101,13 @@ class NumpyMHALinear:
         for b in range(B):
             for h in range(self.H):
                 Q = qh[b, h].astype(np.int32)              # (T,dh)
+                np.savetxt(f"data/a{layer_num}_head{h}_q_golden.txt",
+                      Q.flatten(),
+                      fmt="%s", delimiter=" ")
                 Kt = kh[b, h].astype(np.int32).T           # (dh,T)
+                np.savetxt(f"data/a{layer_num}_head{h}_k_golden.txt",
+                      kh[b, h].astype(np.int32).flatten(),
+                      fmt="%s", delimiter=" ")
                 scores_acc = Q @ Kt                         # (T,T) int32 //LAYER
 
                 # # NONLINEAR (commented): scaling and softmax
@@ -113,6 +119,9 @@ class NumpyMHALinear:
                 sh_s = _choose_shift(scores_acc)
                 sh_s_heads[h] = sh_s
                 scores_q = np.clip(scores_acc >> sh_s, -128, 127).astype(np.int8)  # (T,T)
+                np.savetxt(f"data/a{layer_num}_head{h}_scores_golden.txt",
+                      scores_q.astype(np.int32).flatten(),
+                      fmt="%s", delimiter=" ")
 
                 V = vh[b, h].astype(np.int32)               # (T,dh), promote for accum
                 ctx_acc = scores_q.astype(np.int32) @ V     # (T,dh) int32
@@ -122,6 +131,9 @@ class NumpyMHALinear:
                 ctx_q = np.clip(ctx_acc >> sh_c, -128, 127).astype(np.int8)  # (T,dh)
 
                 ctx_h[b, h] = ctx_q
+                np.savetxt(f"data/a{layer_num}_head{h}_ctx_golden.txt",
+                      ctx_h[b, h].flatten(),
+                      fmt="%s", delimiter=" ")
 
         # Concat heads -> (B,T,C) int8
         ctx = ctx_h.transpose(0, 2, 1, 3).reshape(B, T, C)
