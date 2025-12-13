@@ -69,13 +69,16 @@ class ResAddLayer(AIELayer):
         batch, features = self.outputs['x1'].shape
         t_m = batch // self.m
         t_n = features // self.n
+        
+        f.write('#include "iron_kernels.h"\n\n')
 
-        f.write('#include <cstdint>\n')
-        f.write('#include "kernels.h"\n\n')
-
-        f.write(f'void f{self.idx}(input_stream_int8 * __restrict x1, input_stream_int8 * __restrict x2, output_stream_int8 * __restrict a){{ ')
-        f.write(f'resadd<{self.m}, {self.n}, {t_m}, {t_n}>')
-        f.write(' (x1, x2, a);}\n')
+        f.write('extern "C" {\n')
+        f.write('#include <cstdint>\n\n')
+        f.write(f'void f{self.idx}(int8_t * x1, int8_t * x2, int8_t * a){{ \n')
+        f.write(f'    resadd<{self.m}, {self.n}, {t_m}, {t_n}>')
+        f.write('(x1, x2, a);\n')
+        f.write('}\n')
+        f.write('}')
 
         self._generate_include_code()
 

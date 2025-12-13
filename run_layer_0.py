@@ -4,8 +4,6 @@ import numpy as np
 import sys
 import os
 from utils.tiling import tile_matrix
-import time
-import argparse
 
 import aie.iron as iron
 from aie.iron import ExternalFunction, jit
@@ -21,7 +19,7 @@ from aie.utils.config import cxx_header_path
 # Parameters:
 #     - is_placed (bool): Whether the kernel is using explicit or deferred placement API. Defaults to True.
 #     - use_cache (bool): Use cached MLIR module if available. Defaults to True.
-@iron.jit(is_placed=False)
+@iron.jit(is_placed=False, use_cache=False)
 def dense_ly(input0, output):
     N = input0.shape[0]  # Tensor size
     N_out = output.shape[0]
@@ -46,7 +44,7 @@ def dense_ly(input0, output):
 
     dense_ly_kernel = ExternalFunction(
         "f0",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/dense_layer_ex.cc"),
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_0.cc"),
         arg_types=[in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
@@ -84,22 +82,14 @@ def dense_ly(input0, output):
 
 
 def main():
-    argparser = argparse.ArgumentParser(
-            prog="Dense Kernel Test",
-            description="Programming testing if dense layer works"
-            )
-    argparser.add_argument('-b', '--benchmark', action='store_true', help=argparse.SUPPRESS)
-    args = argparser.parse_args()
-
-
     element_type = np.int8
     
-    inp = np.loadtxt("./iron_kernels/test_data/dense_input.txt", dtype=np.int8)
-    ref = np.loadtxt("./iron_kernels/test_data/dense_out_ref.txt", dtype=np.int8).flatten()
+    inp = np.loadtxt("./data/input.txt", dtype=np.int8)
+    ref = np.loadtxt("./data/a0_golden.txt", dtype=np.int8).flatten()
 
-    INPUT_ROWS = 160
+    INPUT_ROWS = 40
     INPUT_COLS = 8
-    OUTPUT_SIZE = 160 * 64
+    OUTPUT_SIZE = 40 * 64
 
     if inp.size != INPUT_ROWS * INPUT_COLS:
         raise ValueError(f"input size {inp.size} != {INPUT_ROWS*INPUT_COLS}")
@@ -108,37 +98,15 @@ def main():
     inp_tiled = tile_matrix(inp_mat, 4, 8)  # flattened tiled input
 
     # Convert/set Iron tensors for kernel input and output
-    inp_tensor = iron.zeros(inp_tiled.shape, dtype=np.int8, device="npu")
-    inp_tensor[:] = inp_tiled
+    inp_tensor = iron.tensor(inp_tiled, dtype=np.int8, device="npu")
     output = iron.zeros(OUTPUT_SIZE, dtype=element_type, device="npu")
 
     # Insantiate AIE Kernel
     dense_ly(inp_tensor, output)
 
-    # Measure peformance on the second execution using the JIT cached design
-    # Optional to run the test
-    if args.benchmark:
-        output_ben = iron.zeros(OUTPUT_SIZE, dtype=element_type, device="npu")
-        inp_tensor_ben    = iron.zeros(inp_tiled.shape, dtype=np.int8, device="npu")
-        inp_tensor_ben[:] = inp_tiled
-
-        # benchmark performance. 
-        # Will use jit compiled kernel and loaded objects
-        start_time = time.perf_counter()
-        end_time = time.perf_counter()
-
-        # benchark
-        elapsed_time = end_time - start_time  # seconds
-        dense_ly(inp_tensor_ben, output_ben)
-        elapsed_us = elapsed_time * 1e6  # microseconds
-
-        # Bandwidth calculation
-        #total_bytes = 2.0 * length * np.dtype(element_type).itemsize  # input + output
-        #bandwidth_GBps = total_bytes / elapsed_us / 1e3  # (bytes / µs) → GB/s
-
-        print(f"Latency: {elapsed_time:.6f} seconds ({elapsed_us:.2f} µs)")
-        #print(f"Effective Bandwidth: {bandwidth_GBps:.2f} GB/s")
-
+    np.savetxt("./data/a0_real.txt",
+               np.array(output, dtype=np.int8),
+               fmt="%d")
 
     out_np = np.array(output, dtype=np.int8)
 
@@ -149,11 +117,11 @@ def main():
             errors += 1
 
     if errors == 0:
-        print("\nPASS!\n")
+        print("\nlayer 0 PASS!\n")
         sys.exit(0)
     else:
         print(f"\nError count: {errors}")
-        print("failed.\n")
+        print("layer 0 failed.\n")
         sys.exit(1)
 
 
