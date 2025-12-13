@@ -2,6 +2,8 @@ import numpy as np
 import sys
 import os
 from utils.tiling import tile_matrix
+import time
+import argparse
 
 import aie.iron as iron
 from aie.iron import ExternalFunction
@@ -401,6 +403,13 @@ def output_ly(input0, output):
 
 
 def main():
+    argparser = argparse.ArgumentParser(
+            prog="Dense Kernel Test",
+            description="Programming testing if dense layer works"
+            )
+    argparser.add_argument('-b', '--benchmark', action='store_true', help=argparse.SUPPRESS)
+    args = argparser.parse_args()
+
     element_type = np.int8
     
     inp = np.loadtxt("./iron_kernels/test_data/test_4_a0_golden.txt", dtype=np.int8).flatten()
@@ -434,6 +443,37 @@ def main():
     print("context_output: ", context_output);
     output_ly(context_output, output_output)
     print("output_output: ", output_output);
+
+
+    # Measure peformance on the second execution using the JIT cached design
+    # Optional to run the test
+    if args.benchmark:
+        print("Running again but benchmarked: ");
+
+
+        # benchmark performance. 
+        # Will use jit compiled kernel and loaded objects
+        start_time = time.perf_counter()
+        # Insantiate AIE Kernel        
+        # for i in range(4):
+        dense_q(inp_tensor, q_output)
+        dense_k(inp_tensor, k_output)
+        dense_v(inp_tensor, v_output)
+        
+        score_ly(q_output, k_output, score_output)
+        context_ly(score_output, v_output, context_output)
+        output_ly(context_output, output_output)
+        end_time = time.perf_counter()
+
+
+        # benchark calculation
+        elapsed_time = end_time - start_time  # seconds
+        elapsed_us = elapsed_time * 1e6  # microseconds
+
+        print("scores_output: ", score_output);
+        print("context_output: ", context_output);
+        print("output_output: ", output_output);
+        print(f"Latency: {elapsed_time:.6f} seconds ({elapsed_us:.2f} µs)")
 
     np.savetxt("q_output.txt",
                np.array(q_output, dtype=np.int8),

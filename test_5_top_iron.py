@@ -2,6 +2,8 @@ import numpy as np
 import sys
 import os
 from utils.tiling import tile_matrix
+import time
+import argparse
 
 import aie.iron as iron
 from aie.iron import ExternalFunction
@@ -352,6 +354,13 @@ def make_resadd_ly(layer_num: int):
 
 
 def main():
+    argparser = argparse.ArgumentParser(
+            prog="Dense Kernel Test",
+            description="Programming testing if dense layer works"
+            )
+    argparser.add_argument('-b', '--benchmark', action='store_true', help=argparse.SUPPRESS)
+    args = argparser.parse_args()
+
     element_type = np.int8
     
     inp = np.loadtxt("./data/input.txt", dtype=np.int8)
@@ -388,6 +397,9 @@ def main():
     resadd_fn(mha_in_tensor, mha_out_tensor, output)
     
     out_np = np.array(output, dtype=np.int8)
+    
+    if args.benchmark:
+        print("BENCHMARK Option not implemented yet");
 
     errors = 0
     for i, (a, r) in enumerate(zip(out_np, ref)):

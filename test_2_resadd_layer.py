@@ -4,6 +4,8 @@ import numpy as np
 import sys
 import os
 from utils.tiling import tile_matrix
+import time
+import argparse
 
 import aie.iron as iron
 from aie.iron import ExternalFunction, jit
@@ -86,6 +88,13 @@ def resadd_ly(input0, input1, output):
 
 
 def main():
+    argparser = argparse.ArgumentParser(
+            prog="Dense Kernel Test",
+            description="Programming testing if dense layer works"
+            )
+    argparser.add_argument('-b', '--benchmark', action='store_true', help=argparse.SUPPRESS)
+    args = argparser.parse_args()
+
     element_type = np.int8
     
     inp0 = np.loadtxt("./iron_kernels/test_data/test_2_input0.txt", dtype=np.int8)
@@ -113,6 +122,25 @@ def main():
 
     # Insantiate AIE Kernel
     resadd_ly(inp0_tensor, inp1_tensor, output)
+
+    # Measure peformance on the second execution using the JIT cached design
+    # Optional to run the test
+    if args.benchmark:
+        inp0_tensor_ben = iron.tensor(inp0_tiled, dtype=np.int8, device="npu")
+        inp1_tensor_ben = iron.tensor(inp1_tiled, dtype=np.int8, device="npu")
+        output = iron.zeros(OUTPUT_SIZE, dtype=element_type, device="npu")
+
+        # benchmark performance. 
+        # Will use jit compiled kernel and loaded objects
+        start_time = time.perf_counter()
+        resadd_ly(inp0_tensor_ben, inp1_tensor_ben, output)
+        end_time = time.perf_counter()
+
+        # benchark calculation
+        elapsed_time = end_time - start_time  # seconds
+        elapsed_us = elapsed_time * 1e6  # microseconds
+
+        print(f"Latency: {elapsed_time:.6f} seconds ({elapsed_us:.2f} µs)")
 
     out_np = np.array(output, dtype=np.int8)
     
