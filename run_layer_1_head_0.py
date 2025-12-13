@@ -142,11 +142,12 @@ def main():
     if inp.size != INPUT_ROWS * INPUT_COLS:
         raise ValueError(f"input size {inp.size} != {INPUT_ROWS*INPUT_COLS}")
 
-    inp_mat = inp.reshape(INPUT_ROWS, INPUT_COLS)
-    inp_tiled = tile_matrix(inp_mat, 4, 8)  # flattened tiled input
+    # maybe don't need to tile here so may be able to delete
+    # inp_mat = inp.reshape(INPUT_ROWS, INPUT_COLS)
+    # inp_tiled = tile_matrix(inp_mat, 4, 8)  # flattened tiled input
 
     # Convert/set Iron tensors for kernel input and output
-    inp_tensor = iron.tensor(inp_tiled, dtype=np.int8, device="npu")
+    inp_tensor = iron.tensor(inp, dtype=np.int8, device="npu")
     output = iron.zeros(OUTPUT_SIZE, dtype=element_type, device="npu")
 
     # Insantiate AIE Kernel

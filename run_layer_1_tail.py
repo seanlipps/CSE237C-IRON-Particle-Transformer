@@ -127,21 +127,22 @@ def main():
     if inp3.size != INPUT_ROWS * INPUT_COLS:
         raise ValueError(f"input size {inp3.size} != {INPUT_ROWS*INPUT_COLS}")
 
-    inp0_mat = inp0.reshape(INPUT_ROWS, INPUT_COLS)
-    inp0_tiled = tile_matrix(inp0_mat, 4, 8)  # flattened tiled input
-    inp1_mat = inp1.reshape(INPUT_ROWS, INPUT_COLS)
-    inp1_tiled = tile_matrix(inp1_mat, 4, 8)  # flattened tiled input
-    inp2_mat = inp2.reshape(INPUT_ROWS, INPUT_COLS)
-    inp2_tiled = tile_matrix(inp2_mat, 4, 8)  # flattened tiled input
-    inp3_mat = inp3.reshape(INPUT_ROWS, INPUT_COLS)
-    inp3_tiled = tile_matrix(inp3_mat, 4, 8)  # flattened tiled input
+    # maybe don't need to tile here so may be able to delete
+    # inp0_mat = inp0.reshape(INPUT_ROWS, INPUT_COLS)
+    # inp0_tiled = tile_matrix(inp0_mat, 4, 8)  # flattened tiled input
+    # inp1_mat = inp1.reshape(INPUT_ROWS, INPUT_COLS)
+    # inp1_tiled = tile_matrix(inp1_mat, 4, 8)  # flattened tiled input
+    # inp2_mat = inp2.reshape(INPUT_ROWS, INPUT_COLS)
+    # inp2_tiled = tile_matrix(inp2_mat, 4, 8)  # flattened tiled input
+    # inp3_mat = inp3.reshape(INPUT_ROWS, INPUT_COLS)
+    # inp3_tiled = tile_matrix(inp3_mat, 4, 8)  # flattened tiled input
     
 
     # Convert/set Iron tensors for kernel input and output
-    inp0_tensor = iron.tensor(inp0_tiled, dtype=np.int8, device="npu")
-    inp1_tensor = iron.tensor(inp1_tiled, dtype=np.int8, device="npu")
-    inp2_tensor = iron.tensor(inp2_tiled, dtype=np.int8, device="npu")
-    inp3_tensor = iron.tensor(inp3_tiled, dtype=np.int8, device="npu")
+    inp0_tensor = iron.tensor(inp0, dtype=np.int8, device="npu")
+    inp1_tensor = iron.tensor(inp1, dtype=np.int8, device="npu")
+    inp2_tensor = iron.tensor(inp2, dtype=np.int8, device="npu")
+    inp3_tensor = iron.tensor(inp3, dtype=np.int8, device="npu")
     output = iron.zeros(OUTPUT_SIZE, dtype=element_type, device="npu")
 
     # Insantiate AIE Kernel
