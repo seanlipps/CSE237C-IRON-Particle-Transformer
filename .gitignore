@@ -28,4 +28,5 @@ golden_debug.ipynb
 pl_sample_count**
 .ipynb_checkpoints/
 *_output.txt
-
+*_output0.txt
+*_output1.txt

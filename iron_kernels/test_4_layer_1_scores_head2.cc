@@ -1,7 +1,7 @@
 #include "iron_kernels.h"
 
 extern "C" {
-void scores1_head0(int8_t * q_head, int8_t * k_head, int8_t * o_head){
+void scores1_head2(int8_t * q_head, int8_t * k_head, int8_t * o_head){
     scores<4, 8, 8, 10, 2, 2, 16, 40, 7>(q_head, k_head, o_head);
 }
 }
