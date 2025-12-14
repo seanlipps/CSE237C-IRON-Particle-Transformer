@@ -7,26 +7,23 @@ from aie.iron import ExternalFunction, ObjectFifo, Program, Runtime, Worker
 from aie.iron.placers import SequentialPlacer
 from aie.utils.config import cxx_header_path
 
-SOURCE_FILE = r"/notebooks/CSE237C-IRON-Particle-Transformer/iron_kernels/test_4_layer_1_q_head0.cc"
-INCLUDE_DIR = r"/notebooks/CSE237C-IRON-Particle-Transformer/iron_kernels"
-
 @iron.jit(is_placed=False)
 def q1_head0_impl(input0, output):
     N = input0.shape[0]
     N_out = output.shape[0]
     element_type = output.dtype
 
-    in_ty = np.ndarray[(N,), np.dtype[element_type]]
-    out_ty = np.ndarray[(N_out,), np.dtype[element_type]]
+    in_ty = np.ndarray[(N//32,32), np.dtype[element_type]]
+    out_ty = np.ndarray[(N_out//32,32), np.dtype[element_type]]
 
     of_x = ObjectFifo(in_ty, name="x")
     of_z = ObjectFifo(out_ty, name="z")
 
     kernel = ExternalFunction(
         "q1_head0",
-        source_file=SOURCE_FILE,
+        source_file="/notebooks/CSE237C-IRON-Particle-Transformer/iron_kernels/test_4_layer_1_q_head0.cc",
         arg_types=[in_ty, out_ty],
-        include_dirs=[cxx_header_path(), INCLUDE_DIR],
+        include_dirs=[cxx_header_path(), "/notebooks/CSE237C-IRON-Particle-Transformer/iron_kernels"],
     )
 
     def core_body(of_x, of_z, kernel):
@@ -52,7 +49,7 @@ if __name__ == "__main__":
     input0_data = iron.tensor(np.loadtxt(r"/notebooks/CSE237C-IRON-Particle-Transformer/temp_q1_head0_in0.txt", dtype=np.int8).flatten(), dtype=np.int8, device="npu")
 
 
-    output_placeholder = iron.zeros((640,), dtype=np.int8, device="npu")
+    output_placeholder = iron.zeros(640, dtype=np.int8, device="npu")
     
     q1_head0_impl(input0_data, output_placeholder)
 

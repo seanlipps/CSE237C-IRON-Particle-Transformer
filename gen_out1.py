@@ -29,24 +29,26 @@ def out1_impl(input0, input1, output):
     kernel = ExternalFunction(
         "out1",
         source_file=SOURCE_FILE,
-        arg_types=[in_ty, out_ty], 
+        arg_types=[in_tx, in_ty, out_ty], 
         include_dirs=[cxx_header_path(), INCLUDE_DIR],
     )
 
-    def core_body(of_x, of_z, kernel):
+    def core_body(of_x, of_y, of_z, kernel):
         elem_x = of_x.acquire(1)
+        elem_y = of_y.acquire(1)
         elem_z = of_z.acquire(1)
-        kernel(elem_x, elem_z)
+        kernel(elem_x, elem_y, elem_z)
         of_x.release(1)
+        of_y.release(1)
         of_z.release(1)
 
-    worker = Worker(core_body, fn_args=[of_x.cons(), of_z.prod(), kernel])
+    worker = Worker(core_body, fn_args=[of_x.cons(), of_y.cons(), of_z.prod(), kernel])
 
     rt = Runtime()
-    # Sequence uses in_ty and out_ty
-    with rt.sequence(in_ty, out_ty) as (a_x, c_z):
+    with rt.sequence(in_tx, in_ty, out_ty) as (a_x, a_y, c_z):
         rt.start(worker)
         rt.fill(of_x.prod(), a_x)
+        rt.fill(of_y.prod(), a_y)
         rt.drain(of_z.cons(), c_z, wait=True)
 
     my_program = Program(iron.get_current_device(), rt)

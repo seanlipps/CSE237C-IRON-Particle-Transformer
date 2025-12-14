@@ -223,7 +223,7 @@ void output(
 
   for (unsigned im = 0; im < Tm; ++im) {
   // chess_prepare_for_pipelining chess_loop_range(1,) {
-    VA Abuf[Tk];
+    static VA Abuf[Tk];
     for (unsigned ik = 0; ik < Tk/2; ++ik) {
       Abuf[ik] = aie::load_v<MMUL::size_A>(ptrA);  
       ptrA += MMUL::size_A;
