@@ -15,7 +15,7 @@ from aie.dialects.aie import *  # primary mlir-aie dialect definitions
 
 ########################################
 @iron.jit(is_placed=False, use_cache=False)
-def mha_head_0(input0, output, out_test):
+def mha_head_0(input0, input_gold, score_real, output):
     N = input0.shape[0]  # Tensor size
     N_out = output.shape[0]
     element_type = output.dtype
@@ -29,13 +29,13 @@ def mha_head_0(input0, output, out_test):
     score_ty = np.ndarray[(40*40,), np.dtype[element_type]] # because INPUT_ROWS = 40 in main()
     out_ty = np.ndarray[(N_out,), np.dtype[element_type]]
 
+    of_s = ObjectFifo(score_ty, name="gold_to_context")
     of_0 = ObjectFifo(in_ty, name="qkv_in")
     of_1 = ObjectFifo(qkv_ty, name="q_to_score")
     of_2 = ObjectFifo(qkv_ty, name="k_to_score")
     of_3 = ObjectFifo(qkv_ty, name="v_to_context")
-    of_4 = ObjectFifo(score_ty, name="score_to_context")
+    of_4 = ObjectFifo(score_ty, name="score_real_out")
     of_5 = ObjectFifo(out_ty, name="context_out")
-    of_test = of_4.cons().forward(obj_type=score_ty, name="test")
 
     # --------------------------------------------------------------------------
     # Task each core will run
@@ -111,7 +111,7 @@ def mha_head_0(input0, output, out_test):
     workers.append(Worker(core_body_1_in, fn_args=[of_0.cons(), of_2.prod(), head_0_k_kernel]))
     workers.append(Worker(core_body_1_in, fn_args=[of_0.cons(), of_3.prod(), head_0_v_kernel]))
     workers.append(Worker(core_body_2_in, fn_args=[of_1.cons(), of_2.cons(), of_4.prod(), head_0_scores_kernel]))
-    workers.append(Worker(core_body_2_in, fn_args=[of_4.cons(), of_3.cons(), of_5.prod(), head_0_context_kernel]))
+    workers.append(Worker(core_body_2_in, fn_args=[of_s.cons(), of_3.cons(), of_5.prod(), head_0_context_kernel]))
                    
 
     # --------------------------------------------------------------------------
@@ -119,11 +119,12 @@ def mha_head_0(input0, output, out_test):
     # --------------------------------------------------------------------------
 
     rt = Runtime()
-    with rt.sequence(in_ty, out_ty, score_ty) as (a_x, c_z, t_t):
+    with rt.sequence(in_ty, score_ty, score_ty, out_ty) as (in_0, in_1, out_0, out_1):
         rt.start(*workers)
-        rt.fill(of_0.prod(), a_x)
-        rt.drain(of_5.cons(), c_z, wait=True)
-        rt.drain(of_test.cons(), t_t, wait=True)
+        rt.fill(of_0.prod(), in_0)
+        rt.fill(of_s.prod(), in_1)
+        rt.drain(of_4.cons(), out_0, wait=True)
+        rt.drain(of_5.cons(), out_1, wait=True)
 
     # --------------------------------------------------------------------------
     # Place and generate MLIR program
@@ -136,7 +137,8 @@ def main():
     element_type = np.int8
     
     inp = np.loadtxt("./data/a0_real.txt", dtype=np.int8).flatten()
-    ref = np.loadtxt("./data/a1_golden.txt", dtype=np.int8).flatten()
+    inp_gold = np.loadtxt("./data/a1_head0_scores_golden.txt", dtype=np.int8).flatten()
+    ref = np.loadtxt("./data/a1_head0_ctx_golden.txt", dtype=np.int8).flatten()
 
     INPUT_ROWS = 40
     INPUT_COLS = 64
@@ -144,6 +146,8 @@ def main():
 
     if inp.size != INPUT_ROWS * INPUT_COLS:
         raise ValueError(f"input size {inp.size} != {INPUT_ROWS*INPUT_COLS}")
+    if inp_gold.size != 40 * 40:
+        raise ValueError(f"input size {scores_gold.size} != {40*40}")
 
     # maybe don't need to tile here so may be able to delete
     # inp_mat = inp.reshape(INPUT_ROWS, INPUT_COLS)
@@ -151,22 +155,36 @@ def main():
 
     # Convert/set Iron tensors for kernel input and output
     inp_tensor = iron.tensor(inp, dtype=np.int8, device="npu")
+    inp_gold_tensor = iron.tensor(inp_gold, dtype=np.int8, device="npu")
+    scores_real = iron.zeros(40*40, dtype=element_type, device="npu")
     output = iron.zeros(OUTPUT_SIZE, dtype=element_type, device="npu")
 
-    test = iron.zeros(40*40, dtype=element_type, device="npu")
-
     # Insantiate AIE Kernel
-    mha_head_0(inp_tensor, output, test)
+    mha_head_0(inp_tensor, inp_gold_tensor, scores_real, output)
 
+    np.savetxt("./data/a1_head_0_scores_real.txt",
+               np.array(scores_real, dtype=np.int8),
+               fmt="%d")
     np.savetxt("./data/a1_head_0_real.txt",
                np.array(output, dtype=np.int8),
                fmt="%d")
 
-    np.savetxt("./data/a1_head_0_scores_real.txt",
-               np.array(test, dtype=np.int8),
-               fmt="%d")
+    out_np = np.array(output, dtype=np.int8)
 
-    # Compare golden output would be here if it existed for a single head
+    # Compare with golden output
+    errors = 0
+    for i, (a, r) in enumerate(zip(out_np, ref)):
+        if a != r:
+            # print(f"Error at {i}: {a} != {r}")
+            errors += 1
+
+    if errors == 0:
+        print("\nlayer 1 head 0 PASS!\n")
+        sys.exit(0)
+    else:
+        print(f"\nError count: {errors}")
+        print("layer 1 head 0 failed.\n")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
