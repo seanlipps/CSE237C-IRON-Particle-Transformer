@@ -1,0 +1,59 @@
+
+import numpy as np
+import os
+import sys
+import aie.iron as iron
+from aie.iron import ExternalFunction, ObjectFifo, Program, Runtime, Worker
+from aie.iron.placers import SequentialPlacer
+from aie.utils.config import cxx_header_path
+
+SOURCE_FILE = r"/notebooks/CSE237C-IRON-Particle-Transformer/iron_kernels/test_4_layer_1_k_head3.cc"
+INCLUDE_DIR = r"/notebooks/CSE237C-IRON-Particle-Transformer/iron_kernels"
+
+@iron.jit(is_placed=False)
+def k1_head3_impl(input0, output):
+    N = input0.shape[0]
+    N_out = output.shape[0]
+    element_type = output.dtype
+
+    in_ty = np.ndarray[(N,), np.dtype[element_type]]
+    out_ty = np.ndarray[(N_out,), np.dtype[element_type]]
+
+    of_x = ObjectFifo(in_ty, name="x")
+    of_z = ObjectFifo(out_ty, name="z")
+
+    kernel = ExternalFunction(
+        "k1_head3",
+        source_file=SOURCE_FILE,
+        arg_types=[in_ty, out_ty],
+        include_dirs=[cxx_header_path(), INCLUDE_DIR],
+    )
+
+    def core_body(of_x, of_z, kernel):
+        elem_x = of_x.acquire(1)
+        elem_z = of_z.acquire(1)
+        kernel(elem_x, elem_z)
+        of_x.release(1)
+        of_z.release(1)
+
+    worker = Worker(core_body, fn_args=[of_x.cons(), of_z.prod(), kernel])
+
+    rt = Runtime()
+    with rt.sequence(in_ty, out_ty) as (a_x, c_z):
+        rt.start(worker)
+        rt.fill(of_x.prod(), a_x) # Fill with the numpy array passed in
+        rt.drain(of_z.cons(), c_z, wait=True) # Drain into the output numpy array
+
+    my_program = Program(iron.get_current_device(), rt)
+    return my_program.resolve_program(SequentialPlacer())
+
+if __name__ == "__main__":
+    # Load Inputs
+    input0_data = iron.tensor(np.loadtxt(r"/notebooks/CSE237C-IRON-Particle-Transformer/temp_k1_head3_in0.txt", dtype=np.int8).flatten(), dtype=np.int8, device="npu")
+
+
+    output_placeholder = iron.zeros((640,), dtype=np.int8, device="npu")
+    
+    k1_head3_impl(input0_data, output_placeholder)
+
+    np.savetxt(r"/notebooks/CSE237C-IRON-Particle-Transformer/temp_k1_head3_out.txt", np.array(output_placeholder, dtype=np.int8), fmt="%d")
