@@ -149,7 +149,9 @@ def main():
     for i, (a, r) in enumerate(zip(out_np, ref)):
         if a != r:
             # print(f"Error at {i}: {a} != {r}")
-            errors += 1
+            er
+rm -rf ~/.iron/cache/*
+python3 run_layer_1_tail.rors += 1
 
     if errors == 0:
         print("\nlayer 1 PASS!\n")

@@ -136,7 +136,7 @@ def main():
     element_type = np.int8
     
     inp = np.loadtxt("./data/a0_real.txt", dtype=np.int8).flatten()
-    ref = np.loadtxt("./data/a1_golden.txt", dtype=np.int8).flatten()
+    ref = np.loadtxt("./data/a1_head0_ctx_golden.txt", dtype=np.int8).flatten()
 
     INPUT_ROWS = 40
     INPUT_COLS = 64
@@ -162,7 +162,7 @@ def main():
                np.array(output, dtype=np.int8),
                fmt="%d")
 
-    np.savetxt("./data/a1_head_0_scores_real.txt",
+    np.savetxt("./data/a1_head_0_ctx_real.txt",
                np.array(test, dtype=np.int8),
                fmt="%d")
 
