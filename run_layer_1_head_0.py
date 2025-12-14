@@ -119,7 +119,7 @@ def mha_head_0(input0, output, out_test):
     # --------------------------------------------------------------------------
 
     rt = Runtime()
-    with rt.sequence(in_ty, out_ty, qkv_ty) as (a_x, c_z, t_t):
+    with rt.sequence(in_ty, out_ty, score_ty) as (a_x, c_z, t_t):
         rt.start(*workers)
         rt.fill(of_0.prod(), a_x)
         rt.drain(of_5.cons(), c_z, wait=True)

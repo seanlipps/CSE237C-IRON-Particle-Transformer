@@ -1,5 +1,6 @@
 # np_mha_linear.py
 import numpy as np
+from utils.tiling import tile_matrix
 
 def _choose_shift(acc_int32):
     max_abs = int(np.max(np.abs(acc_int32))) if acc_int32.size else 0
@@ -101,12 +102,16 @@ class NumpyMHALinear:
         for b in range(B):
             for h in range(self.H):
                 Q = qh[b, h].astype(np.int32)              # (T,dh)
+                Q_tiled = tile_matrix(Q, 4, 8)
+                Q_repeated = np.tile(Q_tiled, (1, 1))
                 np.savetxt(f"data/a{layer_num}_head{h}_q_golden.txt",
-                      Q.flatten(),
+                      Q_repeated.flatten(),
                       fmt="%s", delimiter=" ")
                 Kt = kh[b, h].astype(np.int32).T           # (dh,T)
+                K_tiled = tile_matrix(kh[b, h], 4, 8)
+                K_repeated = np.tile(K_tiled, (1, 1))
                 np.savetxt(f"data/a{layer_num}_head{h}_k_golden.txt",
-                      kh[b, h].astype(np.int32).flatten(),
+                      K_repeated.flatten(),
                       fmt="%s", delimiter=" ")
                 scores_acc = Q @ Kt                         # (T,T) int32 //LAYER
 
@@ -119,8 +124,10 @@ class NumpyMHALinear:
                 sh_s = _choose_shift(scores_acc)
                 sh_s_heads[h] = sh_s
                 scores_q = np.clip(scores_acc >> sh_s, -128, 127).astype(np.int8)  # (T,T)
+                scores_q_tiled = tile_matrix(scores_q, 4, 4)
+                scores_q_repeated = np.tile(scores_q_tiled, (1, 1))
                 np.savetxt(f"data/a{layer_num}_head{h}_scores_golden.txt",
-                      scores_q.astype(np.int32).flatten(),
+                      scores_q_repeated.astype(np.int32).flatten(),
                       fmt="%s", delimiter=" ")
 
                 V = vh[b, h].astype(np.int32)               # (T,dh), promote for accum
@@ -131,8 +138,10 @@ class NumpyMHALinear:
                 ctx_q = np.clip(ctx_acc >> sh_c, -128, 127).astype(np.int8)  # (T,dh)
 
                 ctx_h[b, h] = ctx_q
+                ctx_q_tiled = tile_matrix(ctx_q, 4, 8)
+                ctx_q_repeated = np.tile(ctx_q_tiled, (1, 1))
                 np.savetxt(f"data/a{layer_num}_head{h}_ctx_golden.txt",
-                      ctx_h[b, h].flatten(),
+                      ctx_q_repeated.flatten(),
                       fmt="%s", delimiter=" ")
 
         # Concat heads -> (B,T,C) int8
