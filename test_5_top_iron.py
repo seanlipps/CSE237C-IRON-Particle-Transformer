@@ -12,7 +12,6 @@ from aie.helpers.taplib import TensorAccessPattern, TensorTiler2D
 from aie.utils.config import cxx_header_path
 from aie.dialects.aie import *  # primary mlir-aie dialect definitions
 
-
 ########################################
 # Dense 
 # compute dense for mha layer input
@@ -429,24 +428,16 @@ def main():
     mha2_p2_fn(mha2_p1_out_tensor[0], mha2_p1_out_tensor[1], mha2_p1_out_tensor[2], mha2_p1_out_tensor[3], mha2_p2_out_tensor)
     resadd2_fn(resdense1_out_tensor, mha2_p2_out_tensor, resdense2_out_tensor)  # layer 7,8,9,10
     two_dense_fn(resdense2_out_tensor, output)                      # layer 11, 12
-    
-    out_np = np.array(output, dtype=np.int8)
-    out_mat = out_np.reshape(80, 16)
-    np.savetxt("data/out_sim.txt", out_mat, fmt="%d")
-    
-    # errors = 0
-    # for i, (a, r) in enumerate(zip(out_np, ref)):
-    #     if a != r:
-    #         print(f"Error at {i}: {a} != {r}")
-    #         errors += 1
 
-    # if errors == 0:
-    #     print("\nPASS!\n")
-    #     sys.exit(0)
-    # else:
-    #     print(f"\nError count: {errors}")
-    #     print("failed.\n")
-    #     sys.exit(1)
+
+    import os
+    os.makedirs("./data/sim", exist_ok=True)
+    np.savetxt("./data/sim/a0_sim.txt", np.array(dense_out_tensor, dtype=np.int8).reshape(-1, 16), fmt="%d")
+    np.savetxt("./data/sim/a1_sim.txt", np.array(mha1_p2_out_tensor, dtype=np.int8).reshape(-1, 16), fmt="%d")
+    np.savetxt("./data/sim/a5_sim.txt", np.array(resdense1_out_tensor, dtype=np.int8).reshape(-1, 16), fmt="%d")
+    np.savetxt("./data/sim/a6_sim.txt", np.array(mha2_p2_out_tensor, dtype=np.int8).reshape(-1, 16), fmt="%d")
+    np.savetxt("./data/sim/a10_sim.txt", np.array(resdense2_out_tensor, dtype=np.int8).reshape(-1, 16), fmt="%d")
+    np.savetxt("./data/out_sim.txt", np.array(output, dtype=np.int8).reshape(-1, 16), fmt="%d")
 
 
 if __name__ == "__main__":

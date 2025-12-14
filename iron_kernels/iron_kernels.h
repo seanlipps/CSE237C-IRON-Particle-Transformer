@@ -49,7 +49,6 @@ const int8_t * matB
 // (Q @ K^T):  (T, head_dim) @ (T, head_dim)^T -> (T, T)
 // 160*16 @ 160*16^T = 160*160
 // m=4, k=8, n=8, T=160, d_model=64, head_dim = 64/4 = 16, Tm(rows)=160/m=40, Tk = head_dim/k = 16/8 = 2, Tn (columns)= head_dim/k = 16/8 = 2
-// (Q @ K^T):  (T, head_dim) @ (T, head_dim)^T -> (T, T)
 template <int m, int k, int n, int Tm, int Tk, int Tn, int d_model, int T, int SHIFT_S>
 void scores(
   int8_t * __restrict pQ,
@@ -118,6 +117,7 @@ void scores(
   }
 }
 
+
 // (scores @ V)  (T,T) @ (T,head_dim) -> (T,head_dim)
 // Tm = 160/4 = 40, Tk = 160/8 = 20, Tn = 16/8 = 2
 // 160 x 160 x 16 tiled with 4 x 8 x 8
@@ -132,18 +132,18 @@ void context(
   using VB   = aie::vector<int16, MMUL::size_B>; // 4x8 (int16)
   using VC   = aie::vector<int16, MMUL::size_C>; // 4x8 (int16)
 
-  using VBin = aie::vector<int8, MMUL::size_B>; // 4x8 (int8)
-  using VCout = aie::vector<int8, MMUL::size_C>; // 4x8 (int8)
+  using VBin = aie::vector<int8, m*n>; // 4x8 (int8)
+  using VCout = aie::vector<int8, m*n>; // 4x8 (int8)
 
   const int8_t* ptrS = pS;
   const int8_t* ptrV = pV;
   int8_t* ptrC = pC;
-  VB matB[Tm*Tn];
+  static VB matB[Tm*Tn];
 
   for (unsigned im = 0; im < Tm; ++im) { // rows
     for (unsigned in = 0; in < Tn; ++in) { // columns
-      VBin B = aie::load_v<MMUL::size_B>(ptrV); // 4x8
-      ptrV += MMUL::size_B;
+      VBin B = aie::load_v<m*n>(ptrV); // 4x8
+      ptrV += m*n;
       VB B16 = B.unpack();
       matB[im*Tn+in] = B16; //convert to int16 for 4x4x8
     }
@@ -167,7 +167,7 @@ void context(
       VC v = C.template to_vector<int16>(SHIFT);
       VCout vout = v.pack();
       aie::store_v(ptrC, vout);
-      ptrC += MMUL::size_C;
+      ptrC += m*n;
     }
   }
 }

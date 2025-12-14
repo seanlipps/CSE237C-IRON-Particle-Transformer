@@ -74,4 +74,4 @@ def build_and_run(seed: int = 0):
 
 
 if __name__ == "__main__":
-    build_and_run()
+    build_and_run(1)
