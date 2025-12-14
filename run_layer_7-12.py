@@ -146,7 +146,7 @@ def main():
     element_type = np.int8
 
     inp0 = np.loadtxt("./data/a5_real.txt", dtype=np.int8).flatten()
-    inp1 = np.loadtxt("./data/a6_real.txt", dtype=np.int8).flatten() # ideally would be a6_real.txt
+    inp1 = np.loadtxt("./data/a6_real.txt", dtype=np.int8).flatten()
     ref = np.loadtxt("./data/a12_golden.txt", dtype=np.int8).flatten()
 
     INPUT_ROWS = 40
