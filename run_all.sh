@@ -15,3 +15,6 @@ python3 run_layer_1_tail.py
 rm -rf ~/.iron/cache/*
 python3 run_layer_2-5.py
 rm -rf ~/.iron/cache/*
+
+python3 run_layer_7-12.py
+rm -rf ~/.iron/cache/*
