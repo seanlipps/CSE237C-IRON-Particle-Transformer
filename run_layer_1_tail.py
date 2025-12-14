@@ -109,10 +109,10 @@ def mha_tail(input0, input1, input2, input3, output):
 def main():
     element_type = np.int8
     
-    inp0 = np.loadtxt("./data/a1_head_0_real.txt", dtype=np.int8)
-    inp1 = np.loadtxt("./data/a1_head_1_real.txt", dtype=np.int8)
-    inp2 = np.loadtxt("./data/a1_head_2_real.txt", dtype=np.int8)
-    inp3 = np.loadtxt("./data/a1_head_3_real.txt", dtype=np.int8)
+    inp0 = np.loadtxt("./data/a1_head0_ctx_golden.txt", dtype=np.int8) # ideally should be a1_head_0_real.txt
+    inp1 = np.loadtxt("./data/a1_head1_ctx_golden.txt", dtype=np.int8) # ideally should be a1_head_1_real.txt
+    inp2 = np.loadtxt("./data/a1_head2_ctx_golden.txt", dtype=np.int8) # ideally should be a1_head_2_real.txt
+    inp3 = np.loadtxt("./data/a1_head3_ctx_golden.txt", dtype=np.int8) # ideally should be a1_head_3_real.txt
     ref = np.loadtxt("./data/a1_golden.txt", dtype=np.int8).flatten()
 
     INPUT_ROWS = 40
@@ -126,18 +126,7 @@ def main():
     if inp2.size != INPUT_ROWS * INPUT_COLS:
         raise ValueError(f"input size {inp2.size} != {INPUT_ROWS*INPUT_COLS}")
     if inp3.size != INPUT_ROWS * INPUT_COLS:
-        raise ValueError(f"input size {inp3.size} != {INPUT_ROWS*INPUT_COLS}")
-
-    # maybe don't need to tile here so may be able to delete
-    # inp0_mat = inp0.reshape(INPUT_ROWS, INPUT_COLS)
-    # inp0_tiled = tile_matrix(inp0_mat, 4, 8)  # flattened tiled input
-    # inp1_mat = inp1.reshape(INPUT_ROWS, INPUT_COLS)
-    # inp1_tiled = tile_matrix(inp1_mat, 4, 8)  # flattened tiled input
-    # inp2_mat = inp2.reshape(INPUT_ROWS, INPUT_COLS)
-    # inp2_tiled = tile_matrix(inp2_mat, 4, 8)  # flattened tiled input
-    # inp3_mat = inp3.reshape(INPUT_ROWS, INPUT_COLS)
-    # inp3_tiled = tile_matrix(inp3_mat, 4, 8)  # flattened tiled input
-    
+        raise ValueError(f"input size {inp3.size} != {INPUT_ROWS*INPUT_COLS}") 
 
     # Convert/set Iron tensors for kernel input and output
     inp0_tensor = iron.tensor(inp0, dtype=np.int8, device="npu")
