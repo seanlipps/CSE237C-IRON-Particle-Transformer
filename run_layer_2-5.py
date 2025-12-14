@@ -157,11 +157,11 @@ def main():
             errors += 1
 
     if errors == 0:
-        print("\nlayers 2 to 5 PASS!\n")
+        print("\nlayers 2 through 5 PASS!\n")
         sys.exit(0)
     else:
         print(f"\nError count: {errors}")
-        print("layers 2 to 5 failed.\n")
+        print("layers 2 through 5 failed.\n")
         sys.exit(1)
 
 

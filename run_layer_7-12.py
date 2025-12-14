@@ -180,11 +180,11 @@ def main():
             errors += 1
 
     if errors == 0:
-        print("\nlayers 7 to 12 PASS!\n")
+        print("\nlayers 7 through 12 PASS!\n")
         sys.exit(0)
     else:
         print(f"\nError count: {errors}")
-        print("layers 7 to 12 failed.\n")
+        print("layers 7 through 12 failed.\n")
         sys.exit(1)
 
 

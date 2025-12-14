@@ -221,7 +221,7 @@ class AIEModel:
     def _run_simulation(self):
         """Run kernel codes on NPU using Iron"""
         try:
-            subprocess.run(["./run.sh"], check=True, cwd=".") # this is where we run the top iron script
+            subprocess.run(["./run_all_layers.sh"], check=True, cwd=".") # this is where we run the top iron script
             print(f"  ✓ Compilation and simulation complete")
         except subprocess.CalledProcessError as e:
             print(f"  ✗ Error during compilation/simulation: {e}")
@@ -234,7 +234,7 @@ class AIEModel:
         Returns:
             True if outputs match, False otherwise
         """
-        aie_out_path = "aiesimulator_output/data/out_sim.txt"     # iron output txt should be here
+        aie_out_path = "data/out_sim.txt"     # iron output txt should be here
 
         if not os.path.exists(aie_out_path):
             print(f"  ✗ AIE output file not found: {aie_out_path}")

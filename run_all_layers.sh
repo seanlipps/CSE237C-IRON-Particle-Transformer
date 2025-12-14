@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# deleting cache may not be needed
 rm -rf ~/.iron/cache/*
 python3 run_layer_0.py
 # rm -rf ~/.iron/cache/*
