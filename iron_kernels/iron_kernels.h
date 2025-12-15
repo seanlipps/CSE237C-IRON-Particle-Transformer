@@ -66,7 +66,7 @@ void scores(
   const int8_t* ptrK = pK;
   int8_t* ptrS = pS;
     
-  static VB matB[Tm*Tn]; //store all of pK in mem
+  alignas(64) static VB matB[Tm*Tn]; //store all of pK in mem
 
   alignas(32) int8_t tile[m*n]; //4x8
   alignas(32) int8_t trans_tile[n*n] = {}; //8x8, initialize with 0s
@@ -74,34 +74,35 @@ void scores(
   alignas(32) int8_t otile[MMUL::size_C]; //4x8
   alignas(32) int8_t out_tile[m*m]; //4x4
 
-  for (unsigned i = 0; i < Tm; ++i) {
-    for (unsigned j = 0; j < Tn; ++j) {
-      aie::store_v(tile, aie::load_v<MMUL::size_A>(ptrK));
+  unsigned d = 0;
+  for (unsigned i = 0; i < Tm; ++i) { // rows
+    for (unsigned j = 0; j < Tn; ++j) { // columns
+      VA Kt = aie::transpose(aie::load_v<MMUL::size_A>(ptrK), m, n);
       ptrK += MMUL::size_A;
-      unsigned c = 0;
-      for (unsigned a = 0; a < m; a++) { //trans_tile gets 8x4 of data
-          for (unsigned b = 0; b < n; b++) { 
-            trans_tile[b*n+a] = tile[c];
-            c++;
+      aie::store_v(tile, Kt);
+      unsigned e = 0;
+      for (unsigned r = 0; r < n; ++r) {
+          for (unsigned c = 0; c < m; ++c) {
+              trans_tile[r*n+c] = tile[e++];
           }
       }
-      VB vK = aie::load_v<MMUL::size_B>(trans_tile); //8x8
-      matB[i*Tn+j] = vK;
+      matB[d++] = aie::load_v<n*n>(trans_tile);
     }
   }
-  
+    
   // row by row multiplication
   for (unsigned im = 0; im < Tm; ++im) {
-    VA Abuf[Tn]; // row of tiles
+    alignas(64) VA Abuf[Tn]; // row of tiles
     for (unsigned in = 0; in < Tn; ++in) {
       Abuf[in] = aie::load_v<MMUL::size_A>(ptrQ);
       ptrQ += MMUL::size_A;
     }
+    unsigned d = 0;
     for (unsigned jm = 0; jm < Tm; ++jm) { // rows of K
       MMUL C;
       for (unsigned in = 0; in < Tn; ++in) { // columns of K
-        if (in == 0) C.mul(Abuf[0], matB[jm*Tn+in]);
-        else         C.mac(Abuf[in], matB[jm*Tn+in]);
+        if (in == 0) C.mul(Abuf[0], matB[d++]);
+        else         C.mac(Abuf[in], matB[d++]);
       }
       VC v = C.template to_vector<int8>(SHIFT_S); //4x8
       aie::store_v(otile, v);

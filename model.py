@@ -240,11 +240,11 @@ class AIEModel:
             print(f"  ✗ AIE output file not found: {aie_out_path}")
             return False
 
-        # Clean AIE output (remove timestamp lines)
-        with open(aie_out_path, "r") as infile, open("data/out_sim.txt", "w") as outfile:
-            for line in infile:
-                if not line.startswith("T"):
-                    outfile.write(line)
+        # # Clean AIE output (remove timestamp lines)
+        # with open(aie_out_path, "r") as infile, open("data/out_sim.txt", "w") as outfile:
+        #     for line in infile:
+        #         if not line.startswith("T"):
+        #             outfile.write(line)
 
         # Load and compare
         out_sim = np.loadtxt("data/out_sim.txt").astype(np.int32)
