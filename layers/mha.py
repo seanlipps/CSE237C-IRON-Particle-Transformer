@@ -74,7 +74,7 @@ class MHALayer(AIELayer):
         self.Wv_heads = []
         self.Wo_tiled = None
 
-    def _compute_golden(self, inputs: List[np.ndarray]) -> np.ndarray:
+    def _compute_golden(self, inputs: List[np.ndarray], layer_num) -> np.ndarray:
         self.validate_inputs(inputs, expected_count=1)
         x = inputs[0]
 
@@ -95,7 +95,7 @@ class MHALayer(AIELayer):
             Wo=self.Wo
         )
 
-        output = mha(x, x, x, layers=layers_list)
+        output = mha(x, x, x, layers=layers_list, layer_num=layer_num)
 
         assert len(layers_list) == 4, f"Expected 4 layers from MHA, got {len(layers_list)}"
         self.layer_q = layers_list[0]
@@ -142,7 +142,6 @@ class MHALayer(AIELayer):
             pass
 
         for h in range(self.num_heads):
-            print("self.num_heads\n")
             with open(f"iron_kernels/layer_{self.idx}_q_head{h}.cc", "w") as fq:
                 fq.write('#include "iron_kernels.h"\n\n')
                 

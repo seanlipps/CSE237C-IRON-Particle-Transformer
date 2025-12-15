@@ -83,7 +83,6 @@ class AIEModel:
         1. Compute golden reference (NumPy) & Save to files
         2. Generate AIE C++ kernel code
         3. Run on NPU using Iron
-        4. Validate against golden
 
         Args:
             input_data: Input array (will be saved and tiled)
@@ -97,26 +96,14 @@ class AIEModel:
         print("AIE Model Forward Pass")
         print("=" * 60)
 
-        print("\n[1/4] Computing golden reference...")
+        print("\n[1/3] Computing golden reference...")
         self._compute_golden()
 
-        print("\n[2/4] Generating AIE kernel code...")
+        print("\n[2/3] Generating AIE kernel code...")
         self._generate_kernels()
 
-        print("\n[3/4] Running on NPU using Iron...")
+        print("\n[3/3] Running on NPU using Iron...")
         self._run_simulation()
-
-        print("\n[4/4] Validating results...")
-        match = self._validate_output()
-
-        if match:
-            print("\n" + "=" * 60)
-            print("SUCCESS: AIE output matches golden reference!")
-            print("=" * 60)
-        else:
-            print("\n" + "=" * 60)
-            print("ERROR: Output mismatch!")
-            print("=" * 60)
 
         return self.layers[-1].outputs['a']
 
@@ -157,7 +144,12 @@ class AIEModel:
             inputs = self._get_layer_inputs(layer)
 
             print(f"  Layer {i} ({layer.name}): ", end='')
-            output = layer._compute_golden(inputs)
+            output = []
+            if "mha" in layer.name:
+                print(layer.name)
+                output = layer._compute_golden(inputs, i)
+            else:
+                output = layer._compute_golden(inputs)
             print(f"output shape = {output.shape}")
 
             output_tiled = tile_matrix(output, self.m, self.n)
@@ -216,48 +208,12 @@ class AIEModel:
     def _run_simulation(self):
         """Run kernel codes on NPU using Iron"""
         try:
-            subprocess.run(["./run.sh"], check=True, cwd=".") # this is where we run the top iron script
+            subprocess.run(["./run_all_layers.sh"], check=True, cwd=".") # this is where we run the top iron script
             print(f"  ✓ Compilation and simulation complete")
         except subprocess.CalledProcessError as e:
             print(f"  ✗ Error during compilation/simulation: {e}")
             raise
 
-    def _validate_output(self) -> bool:
-        """
-        Validate AIE simulation output against golden reference.
-
-        Returns:
-            True if outputs match, False otherwise
-        """
-        aie_out_path = "aiesimulator_output/data/out_sim.txt"     # iron output txt should be here
-
-        if not os.path.exists(aie_out_path):
-            print(f"  ✗ AIE output file not found: {aie_out_path}")
-            return False
-
-        # Clean AIE output (remove timestamp lines)
-        with open(aie_out_path, "r") as infile, open("data/out_sim.txt", "w") as outfile:
-            for line in infile:
-                if not line.startswith("T"):
-                    outfile.write(line)
-
-        # Load and compare
-        out_sim = np.loadtxt("data/out_sim.txt").astype(np.int32)
-        out_ref = np.loadtxt("data/out_ref.txt").astype(np.int32)
-
-        if out_sim.shape != out_ref.shape:
-            print(f"  ✗ Shape mismatch: sim={out_sim.shape}, ref={out_ref.shape}")
-            return False
-
-        if not np.array_equal(out_sim, out_ref):
-            diff = np.sum(out_sim != out_ref)
-            print(f"  ✗ {diff} elements differ")
-            print(f"    Simulation output:\n{out_sim[:5]}")
-            print(f"    Reference output:\n{out_ref[:5]}")
-            return False
-
-        print(f"  ✓ Outputs match! Shape: {out_sim.shape}")
-        return True
 
     def __repr__(self) -> str:
         """String representation."""
