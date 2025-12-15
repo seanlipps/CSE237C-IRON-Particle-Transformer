@@ -44,8 +44,8 @@ def mha_tail(input0, input1, input2, input3, output):
     # SAXPY operation on X and Y, and writes the result in Z.
 
     concat_head_0_1_kernel = ExternalFunction(
-        "concat1_0",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_concat.cc"),
+        "concat6_0",
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_6_concat.cc"),
         arg_types=[in_ty, in_ty, concat_ty],
         include_dirs=[
             cxx_header_path(),
@@ -53,8 +53,8 @@ def mha_tail(input0, input1, input2, input3, output):
         ],
     )
     concat_head_2_3_kernel = ExternalFunction(
-        "concat1_1",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_concat.cc"),
+        "concat6_1",
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_6_concat.cc"),
         arg_types=[in_ty, in_ty, concat_ty],
         include_dirs=[
             cxx_header_path(),
@@ -62,8 +62,8 @@ def mha_tail(input0, input1, input2, input3, output):
         ],
     )
     out_kernel = ExternalFunction(
-        "out1",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_out.cc"),
+        "out6",
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_6_out.cc"),
         arg_types=[concat_ty, concat_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
@@ -109,11 +109,11 @@ def mha_tail(input0, input1, input2, input3, output):
 def main():
     element_type = np.int8
     
-    inp0 = np.loadtxt("./data/a1_head0_ctx_golden.txt", dtype=np.int8) # ideally should be a1_head_0_real.txt
-    inp1 = np.loadtxt("./data/a1_head1_ctx_golden.txt", dtype=np.int8) # ideally should be a1_head_1_real.txt
-    inp2 = np.loadtxt("./data/a1_head2_ctx_golden.txt", dtype=np.int8) # ideally should be a1_head_2_real.txt
-    inp3 = np.loadtxt("./data/a1_head3_ctx_golden.txt", dtype=np.int8) # ideally should be a1_head_3_real.txt
-    ref = np.loadtxt("./data/a1_golden.txt", dtype=np.int8).flatten()
+    inp0 = np.loadtxt("./data/a6_head0_ctx_golden.txt", dtype=np.int8) # ideally should be a1_head_0_real.txt
+    inp1 = np.loadtxt("./data/a6_head1_ctx_golden.txt", dtype=np.int8) # ideally should be a1_head_1_real.txt
+    inp2 = np.loadtxt("./data/a6_head2_ctx_golden.txt", dtype=np.int8) # ideally should be a1_head_2_real.txt
+    inp3 = np.loadtxt("./data/a6_head3_ctx_golden.txt", dtype=np.int8) # ideally should be a1_head_3_real.txt
+    ref = np.loadtxt("./data/a6_golden.txt", dtype=np.int8).flatten()
 
     INPUT_ROWS = 40
     INPUT_COLS = 16
@@ -126,7 +126,7 @@ def main():
     if inp2.size != INPUT_ROWS * INPUT_COLS:
         raise ValueError(f"input size {inp2.size} != {INPUT_ROWS*INPUT_COLS}")
     if inp3.size != INPUT_ROWS * INPUT_COLS:
-        raise ValueError(f"input size {inp3.size} != {INPUT_ROWS*INPUT_COLS}") 
+        raise ValueError(f"input size {inp3.size} != {INPUT_ROWS*INPUT_COLS}")    
 
     # Convert/set Iron tensors for kernel input and output
     inp0_tensor = iron.tensor(inp0, dtype=np.int8, device="npu")
@@ -138,7 +138,7 @@ def main():
     # Insantiate AIE Kernel
     mha_tail(inp0_tensor, inp1_tensor, inp2_tensor, inp3_tensor, output)
 
-    np.savetxt("./data/a1_real.txt",
+    np.savetxt("./data/a6_real.txt",
                np.array(output, dtype=np.int8),
                fmt="%d")
 
@@ -152,11 +152,11 @@ def main():
             errors += 1
 
     if errors == 0:
-        print("\nlayer 1 tail PASS!\n")
+        print("\nlayer 6 tail PASS!\n")
         sys.exit(0)
     else:
         print(f"\nError count: {errors}")
-        print("layer 1 tail failed.\n")
+        print("layer 6 tail failed.\n")
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ from aie.dialects.aie import *  # primary mlir-aie dialect definitions
 
 ########################################
 @iron.jit(is_placed=False, use_cache=False)
-def mha_head_3(input0, output):
+def layer_2_to_5(input0, input1, output):
     N = input0.shape[0]  # Tensor size
     N_out = output.shape[0]
     element_type = output.dtype
@@ -25,16 +25,14 @@ def mha_head_3(input0, output):
     # --------------------------------------------------------------------------
 
     in_ty = np.ndarray[(N,), np.dtype[element_type]]
-    qkv_ty = np.ndarray[(40*16,), np.dtype[element_type]] 
-    score_ty = np.ndarray[(40*40,), np.dtype[element_type]] # because INPUT_ROWS = 40 in main()
     out_ty = np.ndarray[(N_out,), np.dtype[element_type]]
 
-    of_0 = ObjectFifo(in_ty, name="qkv_in")
-    of_1 = ObjectFifo(qkv_ty, name="q_to_score")
-    of_2 = ObjectFifo(qkv_ty, name="k_to_score")
-    of_3 = ObjectFifo(qkv_ty, name="v_to_context")
-    of_4 = ObjectFifo(score_ty, name="score_to_context")
-    of_5 = ObjectFifo(out_ty, name="context_out")
+    of_0 = ObjectFifo(in_ty, name="dense0_to_resadd2")
+    of_1 = ObjectFifo(in_ty, name="mha1_to_resadd2")
+    of_2 = ObjectFifo(out_ty, name="resadd2_out")
+    of_3 = ObjectFifo(out_ty, name="dense_3_to_dense_4")
+    of_4 = ObjectFifo(out_ty, name="dense_4_to_resadd5")
+    of_5 = ObjectFifo(out_ty, name="resadd5_out")
 
     # --------------------------------------------------------------------------
     # Task each core will run
@@ -43,46 +41,37 @@ def mha_head_3(input0, output):
     # The kernel acquires input tensors X and Y, and output tensor Z, performs the
     # SAXPY operation on X and Y, and writes the result in Z.
 
-    head_3_q_kernel = ExternalFunction(
-        "q1_head3",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_q_head3.cc"),
-        arg_types=[in_ty, qkv_ty],
+    resadd_2_kernel = ExternalFunction(
+        "f2",
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_2.cc"),
+        arg_types=[in_ty, in_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
         ],
     )
-    head_3_k_kernel = ExternalFunction(
-        "k1_head3",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_k_head3.cc"),
-        arg_types=[in_ty, qkv_ty],
+    dense_3_kernel = ExternalFunction(
+        "f3",
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_3.cc"),
+        arg_types=[out_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
         ],
     )
-    head_3_v_kernel = ExternalFunction(
-        "v1_head3",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_v_head3.cc"),
-        arg_types=[in_ty, qkv_ty],
+    dense_4_kernel = ExternalFunction(
+        "f4",
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_4.cc"),
+        arg_types=[out_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
         ],
     )
-    head_3_scores_kernel = ExternalFunction(
-        "scores1_head3",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_scores_head3.cc"),
-        arg_types=[qkv_ty, qkv_ty, score_ty],
-        include_dirs=[
-            cxx_header_path(),
-            os.path.join(os.path.dirname(__file__), "iron_kernels")
-        ],
-    )
-    head_3_context_kernel = ExternalFunction(
-        "context1_head3",
-        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_1_context_head3.cc"),
-        arg_types=[score_ty, qkv_ty, out_ty],
+    resadd_5_kernel = ExternalFunction(
+        "f5",
+        source_file=os.path.join(os.path.dirname(__file__), "iron_kernels/layer_5.cc"),
+        arg_types=[out_ty, out_ty, out_ty],
         include_dirs=[
             cxx_header_path(),
             os.path.join(os.path.dirname(__file__), "iron_kernels")
@@ -106,11 +95,10 @@ def mha_head_3(input0, output):
         of_z.release(1)
 
     workers = []
-    workers.append(Worker(core_body_1_in, fn_args=[of_0.cons(), of_1.prod(), head_3_q_kernel]))
-    workers.append(Worker(core_body_1_in, fn_args=[of_0.cons(), of_2.prod(), head_3_k_kernel]))
-    workers.append(Worker(core_body_1_in, fn_args=[of_0.cons(), of_3.prod(), head_3_v_kernel]))
-    workers.append(Worker(core_body_2_in, fn_args=[of_1.cons(), of_2.cons(), of_4.prod(), head_3_scores_kernel]))
-    workers.append(Worker(core_body_2_in, fn_args=[of_4.cons(), of_3.cons(), of_5.prod(), head_3_context_kernel]))
+    workers.append(Worker(core_body_2_in, fn_args=[of_0.cons(), of_1.cons(), of_2.prod(), resadd_2_kernel]))
+    workers.append(Worker(core_body_1_in, fn_args=[of_2.cons(), of_3.prod(), dense_3_kernel]))
+    workers.append(Worker(core_body_1_in, fn_args=[of_3.cons(), of_4.prod(), dense_4_kernel]))
+    workers.append(Worker(core_body_2_in, fn_args=[of_2.cons(), of_4.cons(), of_5.prod(), resadd_5_kernel]))
                    
 
     # --------------------------------------------------------------------------
@@ -118,10 +106,11 @@ def mha_head_3(input0, output):
     # --------------------------------------------------------------------------
 
     rt = Runtime()
-    with rt.sequence(in_ty, out_ty) as (a_x, c_z):
+    with rt.sequence(in_ty, in_ty, out_ty) as (in_0, in_1, out_0):
         rt.start(*workers)
-        rt.fill(of_0.prod(), a_x)
-        rt.drain(of_5.cons(), c_z, wait=True)
+        rt.fill(of_0.prod(), in_0)
+        rt.fill(of_1.prod(), in_1)
+        rt.drain(of_5.cons(), out_0, wait=True)
 
     # --------------------------------------------------------------------------
     # Place and generate MLIR program
@@ -132,33 +121,48 @@ def mha_head_3(input0, output):
 
 def main():
     element_type = np.int8
-    
-    inp = np.loadtxt("./data/a0_real.txt", dtype=np.int8).flatten()
-    ref = np.loadtxt("./data/a1_golden.txt", dtype=np.int8).flatten()
+
+    inp0 = np.loadtxt("./data/a0_real.txt", dtype=np.int8).flatten()
+    inp1 = np.loadtxt("./data/a1_real.txt", dtype=np.int8).flatten() 
+    ref = np.loadtxt("./data/a5_golden.txt", dtype=np.int8).flatten()
 
     INPUT_ROWS = 40
     INPUT_COLS = 64
-    OUTPUT_SIZE = 40 * 16
+    OUTPUT_SIZE = 40 * 64
 
-    if inp.size != INPUT_ROWS * INPUT_COLS:
-        raise ValueError(f"input size {inp.size} != {INPUT_ROWS*INPUT_COLS}")
-
-    # maybe don't need to tile here so may be able to delete
-    # inp_mat = inp.reshape(INPUT_ROWS, INPUT_COLS)
-    # inp_tiled = tile_matrix(inp_mat, 4, 8)  # flattened tiled input
+    if inp0.size != INPUT_ROWS * INPUT_COLS:
+        raise ValueError(f"input size {inp0.size} != {INPUT_ROWS*INPUT_COLS}")
+    if inp1.size != INPUT_ROWS * INPUT_COLS:
+        raise ValueError(f"input size {inp1.size} != {INPUT_ROWS*INPUT_COLS}")
 
     # Convert/set Iron tensors for kernel input and output
-    inp_tensor = iron.tensor(inp, dtype=np.int8, device="npu")
+    inp0_tensor = iron.tensor(inp0, dtype=np.int8, device="npu")
+    inp1_tensor = iron.tensor(inp1, dtype=np.int8, device="npu")
     output = iron.zeros(OUTPUT_SIZE, dtype=element_type, device="npu")
 
     # Insantiate AIE Kernel
-    mha_head_3(inp_tensor, output)
+    layer_2_to_5(inp0_tensor, inp1_tensor, output)
 
-    np.savetxt("./data/a1_head_3_real.txt",
+    np.savetxt("./data/a5_real.txt",
                np.array(output, dtype=np.int8),
                fmt="%d")
 
-    # Compare golden output would be here if it existed for a single head
+    out_np = np.array(output, dtype=np.int8)
+
+    # Compare with golden output
+    errors = 0
+    for i, (a, r) in enumerate(zip(out_np, ref)):
+        if a != r:
+            # print(f"Error at {i}: {a} != {r}")
+            errors += 1
+
+    if errors == 0:
+        print("\nlayers 2 through 5 PASS!\n")
+        sys.exit(0)
+    else:
+        print(f"\nError count: {errors}")
+        print("layers 2 through 5 failed.\n")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
