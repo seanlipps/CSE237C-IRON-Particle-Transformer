@@ -152,11 +152,11 @@ def main():
             errors += 1
 
     if errors == 0:
-        print("\nlayer 6 PASS!\n")
+        print("\nlayer 6 tail PASS!\n")
         sys.exit(0)
     else:
         print(f"\nError count: {errors}")
-        print("layer 6 failed.\n")
+        print("layer 6 tail failed.\n")
         sys.exit(1)
 
 if __name__ == "__main__":
