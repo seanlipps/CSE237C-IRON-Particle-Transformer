@@ -227,7 +227,7 @@ class AIEModel:
         except subprocess.CalledProcessError as e:
             print(f"  ✗ Error during compilation/simulation: {e}")
             raise
-
+    
     def _validate_output(self) -> bool:
         """
         Validate AIE simulation output against golden reference.
@@ -235,21 +235,15 @@ class AIEModel:
         Returns:
             True if outputs match, False otherwise
         """
-        iron_out_path = "/data/out_sim.txt"     # iron output txt should be here
+        iron_out_path = "./data/out_sim.txt"
 
         if not os.path.exists(iron_out_path):
             print(f"  ✗ iron output file not found: {iron_out_path}")
             return False
 
-        # Clean AIE output (remove timestamp lines)
-        with open(iron_out_path, "r") as infile, open("data/out_sim.txt", "w") as outfile:
-            for line in infile:
-                if not line.startswith("T"):
-                    outfile.write(line)
-
         # Load and compare
-        out_sim = np.loadtxt("data/out_sim.txt").astype(np.int8)
-        out_ref = np.loadtxt("data/out_ref.txt").astype(np.int8)
+        out_sim = np.loadtxt(iron_out_path).astype(np.int8)
+        out_ref = np.loadtxt("./data/out_ref.txt").astype(np.int8)
 
         if out_sim.shape != out_ref.shape:
             print(f"  ✗ Shape mismatch: sim={out_sim.shape}, ref={out_ref.shape}")

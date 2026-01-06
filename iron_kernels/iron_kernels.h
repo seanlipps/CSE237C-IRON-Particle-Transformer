@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <aie_api/aie.hpp>
-
+#include <vector>
 
 template <int m, int k, int n, int Tm, int Tk, int Tn, int SHIFT, bool is_relu>
 void dense(
@@ -45,7 +45,6 @@ const int8_t * matB
     }
 }
 
-
 // (Q @ K^T):  (T, head_dim) @ (T, head_dim)^T -> (T, T)
 // 160*16 @ 160*16^T = 160*160
 // m=4, k=8, n=8, T=160, d_model=64, head_dim = 64/4 = 16, Tm(rows)=160/m=40, Tk = head_dim/k = 16/8 = 2, Tn (columns)= head_dim/k = 16/8 = 2
@@ -55,7 +54,7 @@ void scores(
   int8_t * __restrict pK,
   int8_t * __restrict pS
 ) {
-  using MMUL = aie::mmul<m, n, n, int8, int8>; // 4x8x8
+  using MMUL = aie::mmul<m, k, n, int8, int8>; // 4x8x8
   using VA   = aie::vector<int8, MMUL::size_A>; // 4x8
   using VB   = aie::vector<int8, MMUL::size_B>; // 8x8
   using VC   = aie::vector<int8, MMUL::size_C>; // 4x8
@@ -74,6 +73,7 @@ void scores(
   alignas(32) int8_t otile[MMUL::size_C]; //4x8
   alignas(32) int8_t out_tile[m*m]; //4x4
 
+  unsigned x = 0;
   for (unsigned i = 0; i < Tm; ++i) {
     for (unsigned j = 0; j < Tn; ++j) {
       aie::store_v(tile, aie::load_v<MMUL::size_A>(ptrK));
@@ -86,23 +86,25 @@ void scores(
           }
       }
       VB vK = aie::load_v<MMUL::size_B>(trans_tile); //8x8
-      matB[i*Tn+j] = vK;
+      matB[j*Tm+i] = vK;
     }
   }
-  
+
+  unsigned a = 0;
   // row by row multiplication
-  for (unsigned im = 0; im < Tm; ++im) {
+  for (unsigned im = 0; im < Tm; ++im) { // 40 iterations
     VA Abuf[Tn]; // row of tiles
-    for (unsigned in = 0; in < Tn; ++in) {
+    for (unsigned in = 0; in < Tn; ++in) {  // 2 iterations
       Abuf[in] = aie::load_v<MMUL::size_A>(ptrQ);
       ptrQ += MMUL::size_A;
     }
-    for (unsigned jm = 0; jm < Tm; ++jm) { // rows of K
+    for (unsigned jm = 0; jm < Tm; ++jm) { // columns of K
       MMUL C;
-      for (unsigned in = 0; in < Tn; ++in) { // columns of K
-        if (in == 0) C.mul(Abuf[0], matB[jm*Tn+in]);
-        else         C.mac(Abuf[in], matB[jm*Tn+in]);
+      for (unsigned in = 0; in < Tn; ++in) { // rows of K
+        if (in == 0) C.mul(Abuf[0], matB[in*Tm+jm]);
+        else         C.mac(Abuf[in], matB[in*Tm+jm]);
       }
+      
       VC v = C.template to_vector<int8>(SHIFT_S); //4x8
       aie::store_v(otile, v);
       for (unsigned r = 0; r < m; ++r) {
@@ -116,6 +118,7 @@ void scores(
     }
   }
 }
+
 
 
 // (scores @ V)  (T,T) @ (T,head_dim) -> (T,head_dim)
@@ -223,7 +226,7 @@ void output(
 
   for (unsigned im = 0; im < Tm; ++im) {
   // chess_prepare_for_pipelining chess_loop_range(1,) {
-    VA Abuf[Tk];
+    static VA Abuf[Tk];
     for (unsigned ik = 0; ik < Tk/2; ++ik) {
       Abuf[ik] = aie::load_v<MMUL::size_A>(ptrA);  
       ptrA += MMUL::size_A;
